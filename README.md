@@ -37,6 +37,6 @@ Adapted from Microsoft Q# samples.
       // Clause 1: (x0 OR NOT x1 OR x2)
       [(0, false), (1, true), (2, false)],
       // Clause 2: (NOT x0 OR x1 OR x2)
-      [(0, true), (1, false), (3, false)]
+      [(0, true), (1, false), (2, false)]
     ]
 ```
