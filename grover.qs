@@ -126,28 +126,6 @@ function CalculateOptimalIterations(nQubits : Int) : Int {
 }
 
 /// # Summary
-/// Reflects about the basis state marked by alternating zeros and ones.
-/// This operation defines what input we are trying to find in the search.
-operation ReflectAboutMarked(inputQubits : Qubit[]) : Unit {
-    Message("Reflecting about marked state...");
-    use outputQubit = Qubit();
-    within {
-        // We initialize the outputQubit to (|0⟩ - |1⟩) / √2, so that
-        // toggling it results in a (-1) phase.
-        X(outputQubit);
-        H(outputQubit);
-        // Flip the outputQubit for marked states.
-        // Here, we get the state with alternating 0s and 1s by using the X
-        // operation on every other qubit.
-        for q in inputQubits[...2...] {
-            X(q);
-        }
-    } apply {
-        Controlled X(inputQubits, outputQubit);
-    }
-}
-
-/// # Summary
 /// Given a register in the all-zeros state, prepares a uniform
 /// superposition over all basis states.
 operation PrepareUniform(inputQubits : Qubit[]) : Unit is Adj + Ctl {
