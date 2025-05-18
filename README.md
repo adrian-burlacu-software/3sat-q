@@ -26,3 +26,17 @@ Example usage encodes a 3SAT instance and runs Grover's algorithm to find satisf
 - Utility functions: `ResultArrayAsInt`, `Is3SatSolution`, `ContainsInt`
 
 Adapted from Microsoft Q# samples.
+
+## Example
+
+```qs
+    // Example 3SAT problem:
+    // (x0 OR NOT x1 OR x2) AND (NOT x0 OR x1 OR x2)
+    // Non-unique solution: x0 = false, x1 = true, x2 = true
+    [
+      // Clause 1: (x0 OR NOT x1 OR x2)
+      [(0, false), (1, true), (2, false)],
+      // Clause 2: (NOT x0 OR x1 OR x2)
+      [(0, true), (1, false), (3, false)]
+    ]
+```

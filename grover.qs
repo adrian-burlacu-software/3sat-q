@@ -18,15 +18,39 @@ import Std.Measurement.*;
 import Std.Diagnostics.*;
 
 operation Main() : Result[] {
-    // Example 3SAT problem:
-    // (x0 OR NOT x1 OR x2) AND (NOT x0 OR x1 OR x2)
-    // Unique solution: x0 = false, x1 = true, x2 = true
-    let nQubits = 4;
+    // Example 3SAT problem with 10 variables (x0 to x9):
+    // (x0 OR NOT x1 OR x2)
+    // AND (NOT x3 OR x4 OR x5)
+    // AND (x6 OR x7 OR NOT x8)
+    // AND (NOT x0 OR x2 OR x9)
+    // AND (x1 OR NOT x4 OR x7)
+    // AND (x3 OR x5 OR NOT x6)
+    // AND (x8 OR NOT x9 OR x0)
+    // AND (NOT x2 OR x4 OR x6)
+    // AND (x1 OR x3 OR NOT x5)
+    // AND (x7 OR NOT x8 OR x9)
+    let nQubits = 10;
     let problem = [
         // Clause 1: (x0 OR NOT x1 OR x2)
         [(0, false), (1, true), (2, false)],
-        // Clause 2: (NOT x0 OR x1 OR x2)
-        [(0, true), (1, false), (3, false)]
+        // Clause 2: (NOT x3 OR x4 OR x5)
+        [(3, true), (4, false), (5, false)],
+        // Clause 3: (x6 OR x7 OR NOT x8)
+        [(6, false), (7, false), (8, true)],
+        // Clause 4: (NOT x0 OR x2 OR x9)
+        [(0, true), (2, false), (9, false)],
+        // Clause 5: (x1 OR NOT x4 OR x7)
+        [(1, false), (4, true), (7, false)],
+        // Clause 6: (x3 OR x5 OR NOT x6)
+        [(3, false), (5, false), (6, true)],
+        // Clause 7: (x8 OR NOT x9 OR x0)
+        [(8, false), (9, true), (0, false)],
+        // Clause 8: (NOT x2 OR x4 OR x6)
+        [(2, true), (4, false), (6, false)],
+        // Clause 9: (x1 OR x3 OR NOT x5)
+        [(1, false), (3, false), (5, true)],
+        // Clause 10: (x7 OR NOT x8 OR x9)
+        [(7, false), (8, true), (9, false)]
     ];
     let iterations = CalculateOptimalIterations(nQubits);
     Message($"Number of iterations: {iterations}");
