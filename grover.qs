@@ -45,7 +45,7 @@ operation Main() : Unit {
     // AND (NOT x6 OR NOT x7 OR x3)
     // AND (x8 OR x9 OR NOT x4)
     let nQubits = 10;
-    let nMisses = 500;
+    let nMisses = 100;
     let problem = [
         // Clause 1: (x0 OR x1 OR x2)
         [(0, false), (1, false), (2, false)],
