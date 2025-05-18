@@ -53,7 +53,12 @@ operation Main() : Unit {
         // Clause 10: (NOT x3 OR NOT x4 OR NOT x5)
         [(3, true), (4, true), (5, true)]
     ];
-    let iterations = CalculateOptimalIterations(nQubits);
+    let nClauses = Length(problem);
+    let estimatedSolutions = EstimateNumSolutionsStatistical(nQubits, nClauses);
+    Message($"Estimated number of solutions (statistical): {estimatedSolutions}");
+    // Use (Round(x) as Int) for conversion
+    let nSolutions = Round(estimatedSolutions);
+    let iterations = CalculateOptimalIterations(nQubits, nSolutions);
     Message($"Number of iterations: {iterations}");
 
     let missedCount = GroverSearch(nQubits, iterations, problem, nMisses);
@@ -125,18 +130,32 @@ operation GroverSearch(
 
 /// # Summary
 /// Returns the optimal number of Grover iterations needed to find a marked
-/// item, given the number of qubits in a register.
-function CalculateOptimalIterations(nQubits : Int) : Int {
+/// item, given the number of qubits in a register and the number of solutions.
+function CalculateOptimalIterations(nQubits : Int, nSolutions : Int) : Int {
     if nQubits > 126 {
         fail "This sample supports at most 126 qubits.";
     }
-
     let nItems = 2.0^IntAsDouble(nQubits);
-    let angle = ArcSin(1. / Sqrt(nItems));
-    // shouldn't have to be anything other than * 1.0
-    let iterations = Round((0.25 * PI() / angle - 0.5) * 1.0);
-    iterations
+    if nSolutions > 0 {
+        // Use formula for multiple solutions: k ≈ π/4 * sqrt(N/M)
+        let iterations = Round((PI() / 4.0) * Sqrt(nItems / IntAsDouble(nSolutions)));
+        return iterations;
+    } else {
+        // Fallback to original formula for single solution
+        let angle = ArcSin(1. / Sqrt(nItems));
+        let iterations = Round((0.25 * PI() / angle - 0.5) * 1.0);
+        return iterations;
+    }
 }
+
+/// # Summary
+/// Estimates the number of solutions to a 3SAT problem using the statistical independence assumption.
+function EstimateNumSolutionsStatistical(nQubits : Int, nClauses : Int) : Double {
+    let nAssignments = 2.0 ^ IntAsDouble(nQubits);
+    let probSatisfy = (7.0 / 8.0) ^ IntAsDouble(nClauses);
+    return nAssignments * probSatisfy;
+}
+
 
 /// # Summary
 /// Given a register in the all-zeros state, prepares a uniform
