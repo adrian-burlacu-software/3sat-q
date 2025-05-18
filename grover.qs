@@ -91,11 +91,15 @@ operation GroverSearch(
                 Message($"Found solution: {result}");
                 misses = 0;
             }
+            else {
+              set misses += 1;
+              // Message($"Already found solution: {result}");
+            }
             // Do not set done, keep searching
         } else {
             // If we miss, we will try again
             set misses += 1;
-            Message($"Missed solution: {result}");
+            // Message($"Missed solution: {result}");
             if (misses > 100) {
                 Message("Too many misses, stopping search.");
                 set done = true;
