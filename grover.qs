@@ -45,6 +45,8 @@ operation GroverSearch(
     mutable foundSolutions : Int[] = [];
     mutable allResults : Result[][] = [];
     mutable done = false;
+    mutable misses = 0;
+    // We will keep searching until we find all solutions or we miss
     repeat {
         use qubits = Qubit[nQubits];
         PrepareUniform(qubits);
@@ -66,7 +68,13 @@ operation GroverSearch(
             }
             // Do not set done, keep searching
         } else {
-            set done = true;
+            // If we miss, we will try again
+            set misses += 1;
+            Message($"Missed solution: {result}");
+            if (misses > 100) {
+                Message("Too many misses, stopping search.");
+                set done = true;
+            }
         }
     } until done fixup {};
     Message($"All solutions found: {allResults}");
