@@ -17,45 +17,49 @@ import Std.Arrays.*;
 import Std.Measurement.*;
 import Std.Diagnostics.*;
 
-operation Main() : Result[] {
-    // Example 3SAT problem with 10 variables (x0 to x9):
-    // (x0 OR NOT x1 OR x2)
-    // AND (NOT x3 OR x4 OR x5)
-    // AND (x6 OR x7 OR NOT x8)
-    // AND (NOT x0 OR x2 OR x9)
-    // AND (x1 OR NOT x4 OR x7)
-    // AND (x3 OR x5 OR NOT x6)
-    // AND (x8 OR NOT x9 OR x0)
-    // AND (NOT x2 OR x4 OR x6)
-    // AND (x1 OR x3 OR NOT x5)
-    // AND (x7 OR NOT x8 OR x9)
-    let nQubits = 10;
+operation Main() : Unit {
+    // Example 3SAT problem with 8 variables (x0 to x7) with few(44) solutions:
+    // (x0 OR x1 OR x2)
+    // AND (NOT x0 OR x3 OR x4)
+    // AND (x2 OR NOT x3 OR x5)
+    // AND (x1 OR NOT x4 OR x6)
+    // AND (NOT x1 OR x5 OR x7)
+    // AND (x3 OR NOT x6 OR x7)
+    // AND (NOT x2 OR x4 OR NOT x5)
+    // AND (x0 OR NOT x6 OR NOT x7)
+    // AND (NOT x0 OR NOT x1 OR NOT x2)
+    // AND (NOT x3 OR NOT x4 OR NOT x5)
+    let nQubits = 8;
+    let nMisses = 500;
     let problem = [
-        // Clause 1: (x0 OR NOT x1 OR x2)
-        [(0, false), (1, true), (2, false)],
-        // Clause 2: (NOT x3 OR x4 OR x5)
-        [(3, true), (4, false), (5, false)],
-        // Clause 3: (x6 OR x7 OR NOT x8)
-        [(6, false), (7, false), (8, true)],
-        // Clause 4: (NOT x0 OR x2 OR x9)
-        [(0, true), (2, false), (9, false)],
-        // Clause 5: (x1 OR NOT x4 OR x7)
-        [(1, false), (4, true), (7, false)],
-        // Clause 6: (x3 OR x5 OR NOT x6)
-        [(3, false), (5, false), (6, true)],
-        // Clause 7: (x8 OR NOT x9 OR x0)
-        [(8, false), (9, true), (0, false)],
-        // Clause 8: (NOT x2 OR x4 OR x6)
-        [(2, true), (4, false), (6, false)],
-        // Clause 9: (x1 OR x3 OR NOT x5)
-        [(1, false), (3, false), (5, true)],
-        // Clause 10: (x7 OR NOT x8 OR x9)
-        [(7, false), (8, true), (9, false)]
+        // Clause 1: (x0 OR x1 OR x2)
+        [(0, false), (1, false), (2, false)],
+        // Clause 2: (NOT x0 OR x3 OR x4)
+        [(0, true), (3, false), (4, false)],
+        // Clause 3: (x2 OR NOT x3 OR x5)
+        [(2, false), (3, true), (5, false)],
+        // Clause 4: (x1 OR NOT x4 OR x6)
+        [(1, false), (4, true), (6, false)],
+        // Clause 5: (NOT x1 OR x5 OR x7)
+        [(1, true), (5, false), (7, false)],
+        // Clause 6: (x3 OR NOT x6 OR x7)
+        [(3, false), (6, true), (7, false)],
+        // Clause 7: (NOT x2 OR x4 OR NOT x5)
+        [(2, true), (4, false), (5, true)],
+        // Clause 8: (x0 OR NOT x6 OR NOT x7)
+        [(0, false), (6, true), (7, true)],
+        // Clause 9: (NOT x0 OR NOT x1 OR NOT x2)
+        [(0, true), (1, true), (2, true)],
+        // Clause 10: (NOT x3 OR NOT x4 OR NOT x5)
+        [(3, true), (4, true), (5, true)]
     ];
     let iterations = CalculateOptimalIterations(nQubits);
     Message($"Number of iterations: {iterations}");
 
-    return GroverSearch(nQubits, iterations, problem);
+    let missedCount = GroverSearch(nQubits, iterations, problem, nMisses);
+    Message($"Number of misses: {missedCount}");
+
+    return ();
 }
 
 /// # Summary
@@ -64,12 +68,15 @@ operation Main() : Result[] {
 operation GroverSearch(
     nQubits : Int,
     iterations : Int,
-    problem : (Int, Bool)[][]
-) : Result[] {
+    problem : (Int, Bool)[][],
+    nMisses : Int
+) : Int {
     mutable foundSolutions : Int[] = [];
     mutable allResults : Result[][] = [];
     mutable done = false;
     mutable misses = 0;
+    mutable missesCount = 0;
+
     // We will keep searching until we find all solutions or we miss
     repeat {
         use qubits = Qubit[nQubits];
@@ -93,26 +100,27 @@ operation GroverSearch(
             }
             else {
               set misses += 1;
+              set missesCount += 1;
               // Message($"Already found solution: {result}");
             }
             // Do not set done, keep searching
         } else {
             // If we miss, we will try again
             set misses += 1;
+            set missesCount += 1;
             // Message($"Missed solution: {result}");
-            if (misses > 100) {
-                Message("Too many misses, stopping search.");
-                set done = true;
-            }
+        }
+
+        // Check if we have missed too many times
+        if (misses > nMisses) {
+            Message("Too many misses, stopping search.");
+            set done = true;
         }
     } until done fixup {};
     Message($"All solutions found: {allResults}");
-    // Return the first solution if any, or an empty array
-    if Length(allResults) > 0 {
-        return allResults[0];
-    } else {
-        return [];
-    }
+    Message($"Number of found solutions: {Length(foundSolutions)}");
+
+    return missesCount;
 }
 
 /// # Summary
@@ -125,7 +133,8 @@ function CalculateOptimalIterations(nQubits : Int) : Int {
 
     let nItems = 2.0^IntAsDouble(nQubits);
     let angle = ArcSin(1. / Sqrt(nItems));
-    let iterations = Round(0.25 * PI() / angle - 0.5);
+    // shouldn't have to be anything other than * 1.0
+    let iterations = Round((0.25 * PI() / angle - 0.5) * 1.0);
     iterations
 }
 
@@ -261,11 +270,15 @@ operation ReflectAboutMarkedSolution(solution : Int, inputQubits : Qubit[]) : Un
         }
     } apply {
         Controlled X(inputQubits, outputQubit);
-        // Uncompute inputQubits flips
-        for idx in 0..Length(inputQubits)-1 {
-            if ((solution &&& (1 <<< idx)) == 0) {
-                X(inputQubits[idx]);
-            }
+    }
+    // Uncompute X gates after apply
+    for idx in 0..Length(inputQubits)-1 {
+        if ((solution &&& (1 <<< idx)) == 0) {
+            X(inputQubits[idx]);
         }
+    }
+    // Reset outputQubit to |0⟩
+    if (M(outputQubit) == One) {
+        X(outputQubit);
     }
 }
