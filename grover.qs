@@ -89,6 +89,7 @@ operation GroverSearch(
                 set foundSolutions += [intResult];
                 set allResults += [result];
                 Message($"Found solution: {result}");
+                misses = 0;
             }
             // Do not set done, keep searching
         } else {
