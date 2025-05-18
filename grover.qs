@@ -201,7 +201,6 @@ function EstimateNumSolutionsStatistical(nQubits : Int, nClauses : Int) : Double
     return nAssignments * probSatisfy;
 }
 
-
 /// # Summary
 /// Given a register in the all-zeros state, prepares a uniform
 /// superposition over all basis states.
@@ -261,10 +260,34 @@ operation ReflectAbout3SatSolution(problem : (Int, Bool)[][], inputQubits : Qubi
                     X(inputQubits[varIdx]);
                 }
             }
-            // OR the 3 literalQubits into clauseQubits[clauseIdx]
-            CNOT(literalQubits[0], clauseQubits[clauseIdx]);
-            CNOT(literalQubits[1], clauseQubits[clauseIdx]);
-            CNOT(literalQubits[2], clauseQubits[clauseIdx]);
+
+            // Corrected logic to compute (L0 OR L1 OR L2) into clauseQubits[clauseIdx]
+            // clauseQubits[clauseIdx] is initially |0>. We want it to be |1> if clause is satisfied, |0> otherwise.
+            // A clause (L0 or L1 or L2) is satisfied if NOT ((NOT L0) AND (NOT L1) AND (NOT L2))
+            // literalQubits currently hold L0, L1, L2.
+
+            // 1. Temporarily flip literalQubits to get (NOT L0), (NOT L1), (NOT L2)
+            X(literalQubits[0]);
+            X(literalQubits[1]);
+            X(literalQubits[2]);
+
+            // 2. Compute ((NOT L0) AND (NOT L1) AND (NOT L2)) into clauseQubits[clauseIdx]
+            //    clauseQubits[clauseIdx] will become |1> if L0,L1,L2 were all false (i.e., clause unsatisfied by them).
+            Controlled X(literalQubits, clauseQubits[clauseIdx]);
+
+            // 3. Flip clauseQubits[clauseIdx] to represent clause satisfaction.
+            //    Now, clauseQubits[clauseIdx] is |1> if the clause IS satisfied, and |0> otherwise.
+            X(clauseQubits[clauseIdx]);
+
+            // 4. Unflip literalQubits to restore their original state (L0, L1, L2)
+            //    This is crucial for the automatic uncomputation of the 'use literalQubits' block,
+            //    as the 'within' block's adjoint needs them in this state to correctly uncompute
+            //    the CNOTs that prepared them from inputQubits.
+            X(literalQubits[0]);
+            X(literalQubits[1]);
+            X(literalQubits[2]);
+            // End of corrected clause logic
+
             // Uncompute literalQubits
             for litIdx in 2..-1..0 {
                 let (varIdx, isNegated) = clause[litIdx];
@@ -278,10 +301,8 @@ operation ReflectAbout3SatSolution(problem : (Int, Bool)[][], inputQubits : Qubi
             }
         }
     } apply {
-        // If all clauseQubits are 1, flip the outputQubit (multi-controlled X)
         Controlled X(clauseQubits, outputQubit);
     }
-    // clauseQubits are automatically released/reset by Q#
 }
 
 /// # Summary
@@ -334,15 +355,5 @@ operation ReflectAboutMarkedSolution(solution : Int, inputQubits : Qubit[]) : Un
         }
     } apply {
         Controlled X(inputQubits, outputQubit);
-    }
-    // Uncompute X gates after apply
-    for idx in 0..Length(inputQubits)-1 {
-        if ((solution &&& (1 <<< idx)) == 0) {
-            X(inputQubits[idx]);
-        }
-    }
-    // Reset outputQubit to |0⟩
-    if (M(outputQubit) == One) {
-        X(outputQubit);
     }
 }
