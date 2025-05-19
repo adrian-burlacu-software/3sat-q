@@ -127,9 +127,12 @@ operation GroverSearch(
     mutable misses = 0;
     mutable missesCount = 0;
 
+    use qubits = Qubit[nQubits]; // Qubits are allocated once at the beginning of the operation.
+
     // We will keep searching until we find all solutions or we miss
     repeat {
-        use qubits = Qubit[nQubits];
+        // The line 'use qubits = Qubit[nQubits];' was removed from here.
+        // Qubits are now allocated above and are reset by MResetEachZ for reuse.
         PrepareUniform(qubits);
         for _ in 1..iterations {
             ReflectAbout3SatSolution(problem, qubits);
@@ -146,7 +149,7 @@ operation GroverSearch(
                 set foundSolutions += [intResult];
                 set allResults += [result];
                 Message($"Found solution: {Length(foundSolutions)}");
-                misses = 0;
+                set misses = 0;
             }
             else {
               set misses += 1;
