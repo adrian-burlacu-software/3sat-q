@@ -7,11 +7,17 @@
 //  5. Solution density estimation and branch pruning
 //  6. Preprocessing optimizations
 
+open Microsoft.Quantum.Canon;
+open Microsoft.Quantum.Diagnostics;
+open Microsoft.Quantum.Intrinsic;
+open Microsoft.Quantum.Measurement;
+
 import Std.Convert.*;
 import Std.Math.*;
 import Std.Arrays.*;
 import Std.Measurement.*;
 import Std.Diagnostics.*;
+import Std.Random.*; // Added import for random functions
 
 @EntryPoint()
 operation AdvancedMontanaroMain() : Unit {
@@ -116,7 +122,7 @@ operation AdvancedMontanaroRecursive(
     
     // Progress reporting for deep searches
     if (depth % 5 == 0 and depth > 0) {
-        Message($"Search depth {depth}, {Length(assigned::assignments)} variables assigned");
+        // Message($"Search depth {depth}, {Length(assigned::assignments)} variables assigned");
     }
     
     // Base case: all variables assigned
@@ -732,8 +738,85 @@ function IsVariableAssigned(varIdx : Int, assignment : PartialAssignment) : Bool
     return false;
 }
 
+// Helper operation to get a random boolean
+operation RandomBoolOp() : Bool {
+    return DrawRandomDouble(0.0, 1.0) < 0.5;
+}
+
+// New helper operation to generate a problem with a known solution
+operation GenerateProblemWithKnownSolutionOp(nQubits : Int, numClauses : Int) : ((Int, Bool)[][], Result[]) {
+    mutable knownSolution : Result[] = Repeated(Zero, nQubits);
+    for i in 0..nQubits-1 {
+        if (RandomBoolOp()) {
+            set knownSolution w/= i <- One;
+        }
+    }
+
+    mutable problem : (Int, Bool)[][] = [];
+
+    for _ in 0..numClauses-1 {
+        mutable clauseLiterals : (Int, Bool)[] = [];
+        mutable varsInClause = [-1, -1, -1];
+        
+        // 1. Pick 3 distinct variables
+        for iLit in 0..2 {
+            mutable varIdx = -1;
+            mutable isUnique = false;
+            repeat {
+                set varIdx = DrawRandomInt(0, nQubits - 1);
+                set isUnique = true;
+                for kChosen in 0..iLit-1 {
+                    if (varsInClause[kChosen] == varIdx) {
+                        set isUnique = false;
+                    }
+                }
+            } until isUnique;
+            set varsInClause w/= iLit <- varIdx;
+        }
+
+        // 2. Tentatively assign negations
+        for iLit in 0..2 {
+            let varIdx = varsInClause[iLit];
+            let isNegated = RandomBoolOp();
+            set clauseLiterals += [(varIdx, isNegated)];
+        }
+
+        // 3. Check if the clause is satisfied by knownSolution
+        mutable clauseSatisfiedByKnownSolution = false;
+        for (varIdx, isNegated) in clauseLiterals {
+            let varValueInSolution = knownSolution[varIdx] == One;
+            let literalValue = if isNegated { not varValueInSolution } else { varValueInSolution };
+            if (literalValue) {
+                set clauseSatisfiedByKnownSolution = true;
+                // No break here, need to iterate all literals if using 'break' is an issue or for clarity
+            }
+        }
+
+        // 4. If not satisfied, flip one literal's negation to make it satisfied
+        if (not clauseSatisfiedByKnownSolution) {
+            let flipIndex = DrawRandomInt(0, 2); // 0, 1, or 2
+            let (varToFlip, _originalNegation) = clauseLiterals[flipIndex];
+            let varValueInSolution = knownSolution[varToFlip] == One;
+            
+            let requiredNegation = not varValueInSolution;
+            
+            mutable newClauseLiterals : (Int, Bool)[] = [];
+            for iLit in 0..2 {
+                if (iLit == flipIndex) {
+                    set newClauseLiterals += [(varToFlip, requiredNegation)];
+                } else {
+                    set newClauseLiterals += [clauseLiterals[iLit]];
+                }
+            }
+            set clauseLiterals = newClauseLiterals;
+        }
+        set problem += [clauseLiterals];
+    }
+    return (problem, knownSolution);
+}
+
 // Problem generators
-function GenerateStructuredProblem(nQubits : Int) : (Int, Bool)[][] {
+operation GenerateStructuredProblem(nQubits : Int) : (Int, Bool)[][] {
     if (nQubits == 10) {
         return Generate10QubitProblem();
     } elif (nQubits == 15) {
@@ -742,23 +825,90 @@ function GenerateStructuredProblem(nQubits : Int) : (Int, Bool)[][] {
         return Generate20QubitProblem();
     } elif (nQubits == 25) {
         return Generate25QubitProblem();
-    } elif (nQubits == 30) {
-        return Generate30QubitProblem();
-    } elif (nQubits == 35) {
-        return Generate35QubitProblem();
-    } elif (nQubits == 40) {
-        return Generate40QubitProblem();
-    } elif (nQubits == 45) {
-        return Generate45QubitProblem();
-    } elif (nQubits == 50) {
-        return Generate50QubitProblem();
-    } elif (nQubits == 55) {
-        return Generate55QubitProblem();
-    } elif (nQubits == 60) {
-        return Generate60QubitProblem();
+    } elif (nQubits > 25) { 
+        let numClauses = nQubits * 4; 
+        let (problemInstance, _knownSolution) = GenerateProblemWithKnownSolutionOp(nQubits, numClauses);
+        return problemInstance;
     } else {
-        return Generate10QubitProblem(); // Default fallback
+        Message($"Warning: Using GenerateRandomProblem for {nQubits} qubits. Solution not guaranteed by new method.");
+        return GenerateRandomProblem(nQubits, nQubits * 4, 0.5); 
     }
+}
+
+operation GenerateRandomProblem(nQubits : Int, nClauses : Int, negationProbability : Double) : (Int, Bool)[][] {
+    mutable problem = [];
+    for _ in 0..nClauses-1 {
+        mutable clause = [];
+        // Ensure unique variables in a clause
+        mutable varsInClause = [-1, -1, -1];
+        for iLit in 0..2 {
+            mutable varIdx = -1;
+            mutable isUnique = false;
+            repeat {
+                set varIdx = DrawRandomInt(0, nQubits - 1); // 0 to nQubits-1
+                set isUnique = true;
+                for kChosen in 0..iLit-1 {
+                    if varsInClause[kChosen] == varIdx {
+                        set isUnique = false;
+                    }
+                }
+            } until isUnique;
+            set varsInClause w/= iLit <- varIdx;
+
+            let isNegated = DrawRandomDouble(0.0, 1.0) < negationProbability;
+            set clause += [(varIdx, isNegated)];
+        }
+        set problem += [clause];
+    }
+    return problem;
+}
+
+operation GenerateComplexProblem(nQubits : Int, nClauses : Int, negationProbability : Double) : (Int, Bool)[][] {
+    // Start with a base random problem
+    mutable problem = GenerateRandomProblem(nQubits, nClauses / 2, negationProbability); 
+
+    // Add more structured and potentially harder clauses
+    let nAdditionalClauses = nClauses - Length(problem);
+    for _ in 0..nAdditionalClauses-1 {
+        mutable clause = [];
+        mutable varsInClause = [-1, -1, -1];
+
+        // Bias towards linking variables that are further apart or in specific patterns
+        let v1 = DrawRandomInt(0, nQubits - 1);
+        let v2 = (v1 + DrawRandomInt(0, nQubits / 3) + 1) % nQubits; // Link to a somewhat distant variable
+        let v3 = (v2 + DrawRandomInt(0, nQubits / 2) + 1) % nQubits; // Link to another distant variable
+        
+        // Ensure uniqueness if by chance they are the same after modulo operations
+        // This is a simplified uniqueness check for this generator.
+        // A more robust method would be similar to GenerateRandomProblem's uniqueness check.
+        if (v1 == v2 or v1 == v3 or v2 == v3) {
+            // Fallback to simple random selection for this clause if collision
+            for iLit in 0..2 {
+                mutable varIdx = -1;
+                mutable isUnique = false;
+                repeat {
+                    set varIdx = DrawRandomInt(0, nQubits - 1);
+                    set isUnique = true;
+                    for kChosen in 0..iLit-1 {
+                        if varsInClause[kChosen] == varIdx {
+                            set isUnique = false;
+                        }
+                    }
+                } until isUnique;
+                set varsInClause w/= iLit <- varIdx;
+                let isNegated = DrawRandomDouble(0.0, 1.0) < negationProbability;
+                set clause += [(varIdx, isNegated)];
+            }
+        } else {
+            set varsInClause = [v1, v2, v3];
+            for iLit in 0..2 {
+                let isNegated = DrawRandomDouble(0.0, 1.0) < (negationProbability + (DrawRandomDouble(0.0, 1.0) * 0.1 - 0.05)); // Slightly vary negation
+                set clause += [(varsInClause[iLit], isNegated)];
+            }
+        }
+        set problem += [clause];
+    }
+    return problem;
 }
 
 function Generate10QubitProblem() : (Int, Bool)[][] {
@@ -848,283 +998,6 @@ function Generate25QubitProblem() : (Int, Bool)[][] {
         [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
         [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
         [(5, false), (12, false), (19, false)]    // x5 OR x12 OR x19
-    ];
-}
-
-function Generate30QubitProblem() : (Int, Bool)[][] {
-    return [
-        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
-        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
-        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
-        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
-        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
-        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
-        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
-        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
-        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
-        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
-        [(0, true), (5, true), (10, true)],       // NOT x0 OR NOT x5 OR NOT x10
-        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
-        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
-        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
-        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
-        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
-        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
-        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
-        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
-        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
-        [(0, false), (7, false), (14, false)],    // x0 OR x7 OR x14
-        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
-        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
-        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
-        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
-        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
-        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
-        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
-        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
-        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
-    ];
-}
-
-function Generate35QubitProblem() : (Int, Bool)[][] {
-    return [
-        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
-        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
-        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
-        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
-        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
-        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
-        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
-        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
-        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
-        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
-        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
-        [(33, false), (34, false), (0, true)],    // x33 OR x34 OR NOT x0
-        [(0, true), (5, true), (10, true)],       // NOT x0 OR NOT x5 OR NOT x10
-        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
-        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
-        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
-        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
-        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
-        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
-        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
-        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
-        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
-        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
-        [(0, false), (7, false), (14, false)],    // x0 OR x7 OR x14
-        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
-        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
-        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
-        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
-        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
-        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
-        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
-        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
-        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
-    ];
-}
-
-function Generate40QubitProblem() : (Int, Bool)[][] {
-    return [
-        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
-        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
-        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
-        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
-        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
-        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
-        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
-        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
-        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
-        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
-        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
-        [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
-        [(0, true), (5, true), (10, true)],       // NOT x0 OR NOT x5 OR NOT x10
-        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
-        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
-        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
-        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
-        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
-        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
-        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
-        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
-        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
-        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
-        [(33, true), (34, true), (0, false)],     // NOT x33 OR NOT x34 OR x0
-        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
-        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
-        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
-        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
-        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
-        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
-        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
-        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
-        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
-    ];
-}
-
-function Generate45QubitProblem() : (Int, Bool)[][] {
-    return [
-        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
-        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
-        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
-        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
-        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
-        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
-        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
-        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
-        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
-        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
-        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
-        [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
-        [(36, false), (37, false), (38, false)],  // x36 OR x37 OR x38
-        [(39, false), (40, false), (41, false)],  // x39 OR x40 OR x41
-        [(42, false), (43, false), (44, false)],  // x42 OR x43 OR x44
-        [(0, true), (5, true), (10, true)],       // NOT x0 OR NOT x5 OR NOT x10
-        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
-        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
-        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
-        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
-        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
-        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
-        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
-        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
-        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
-        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
-        [(33, true), (34, true), (0, false)],     // NOT x33 OR NOT x34 OR x0
-        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
-        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
-        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
-        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
-        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
-        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
-        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
-        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
-        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
-    ];
-}
-
-function Generate50QubitProblem() : (Int, Bool)[][] {
-    return [
-        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
-        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
-        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
-        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
-        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
-        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
-        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
-        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
-        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
-        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
-        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
-        [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
-        [(36, false), (37, false), (38, false)],  // x36 OR x37 OR x38
-        [(39, false), (40, false), (41, false)],  // x39 OR x40 OR x41
-        [(42, false), (43, false), (44, false)],  // x42 OR x43 OR x44
-        [(45, false), (0, true), (10, true)],     // x45 OR NOT x0 OR NOT x10
-        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
-        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
-        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
-        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
-        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
-        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
-        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
-        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
-        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
-        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
-        [(33, true), (34, true), (0, false)],     // NOT x33 OR NOT x34 OR x0
-        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
-        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
-        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
-        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
-        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
-        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
-        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
-        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
-        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
-    ];
-}
-
-function Generate55QubitProblem() : (Int, Bool)[][] {
-    return [
-        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
-        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
-        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
-        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
-        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
-        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
-        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
-        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
-        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
-        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
-        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
-        [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
-        [(36, false), (37, false), (38, false)],  // x36 OR x37 OR x38
-        [(39, false), (40, false), (41, false)],  // x39 OR x40 OR x41
-        [(42, false), (43, false), (44, false)],  // x42 OR x43 OR x44
-        [(45, false), (46, false), (47, false)],  // x45 OR x46 OR x47
-        [(0, true), (5, true), (10, true)],       // NOT x0 OR NOT x5 OR NOT x10
-        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
-        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
-        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
-        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
-        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
-        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
-        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
-        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
-        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
-        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
-        [(33, true), (34, true), (0, false)],     // NOT x33 OR NOT x34 OR x0
-        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
-        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
-        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
-        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
-        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
-        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
-        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
-        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
-        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
-    ];
-}
-
-function Generate60QubitProblem() : (Int, Bool)[][] {
-    return [
-        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
-        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
-        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
-        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
-        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
-        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
-        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
-        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
-        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
-        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
-        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
-        [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
-        [(36, false), (37, false), (38, false)],  // x36 OR x37 OR x38
-        [(39, false), (40, false), (41, false)],  // x39 OR x40 OR x41
-        [(42, false), (43, false), (44, false)],  // x42 OR x43 OR x44
-        [(45, false), (46, false), (47, false)],  // x45 OR x46 OR x47
-        [(48, false), (49, false), (0, true)],     // x48 OR x49 OR NOT x0
-        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
-        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
-        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
-        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
-        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
-        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
-        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
-        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
-        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
-        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
-        [(33, true), (34, true), (0, false)],     // NOT x33 OR NOT x34 OR x0
-        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
-        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
-        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
-        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
-        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
-        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
-        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
-        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
-        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
     ];
 }
 
