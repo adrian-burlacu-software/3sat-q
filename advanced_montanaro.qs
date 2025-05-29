@@ -212,65 +212,86 @@ operation AdvancedPreprocessing(
 /// Unit propagation: if a clause has only one unassigned literal, assign it to true
 operation UnitPropagation(
     problem : (Int, Bool)[][],
-    assignment : PartialAssignment,
-    nQubits : Int // Added nQubits for array sizing
+    initialProblemAssignment : PartialAssignment, // Renamed from 'assignment' for clarity
+    nQubits : Int 
 ) : PartialAssignment {
-    mutable currentAssignments = assignment::assignments;
-    
-    // Lookup for variables already assigned (either initially or in this pass)
-    mutable isEffectivelyAssigned = [false, size = nQubits];
-    for (varIdx, _) in currentAssignments {
-        if varIdx >= 0 and varIdx < nQubits {
-            set isEffectivelyAssigned w/= varIdx <- true;
-        }
-    }
+    mutable workingAssignments = initialProblemAssignment::assignments; // This list will be updated iteratively
 
-    // It's important that UnitPropagation can be iterative or handle chains.
-    // A full implementation might loop until no more propagations can be made in a single call.
-    // This version does one pass based on the input assignment + what it finds.
-    // For simplicity, we collect new assignments and add them at the end.
-    // A more robust UnitPropagation might need internal iteration.
-    
-    mutable newlyFoundAssignmentsInThisPass = [];
-
-    for clause in problem {
-        // FindUnitLiteral should ideally use the most up-to-date assignment state.
-        // For this pass, we create an effective assignment including those already found.
-        let effectiveContextForFind = PartialAssignment(currentAssignments + newlyFoundAssignmentsInThisPass);
-        let unitLiteral = FindUnitLiteral(clause, effectiveContextForFind); 
-
-        if (unitLiteral[0] >= 0) { // varIdx found
-            let varIdx = unitLiteral[0];
-            let value = unitLiteral[1] == 1; 
-            
-            // Check if this variable (varIdx) is already assigned (either initially or by a previous step in this pass)
-            mutable alreadyAssignedInContext = false;
+    // UnitPropagation is iterative to handle chains of implications.
+    // It loops internally until no more unit propagations can be made in a single call.
+    mutable continueLooping = true;
+    repeat {
+        set continueLooping = false; // Assume no changes in this iteration initially
+        
+        // Assignments found specifically in *this current iteration* of the repeat loop.
+        mutable assignmentsFoundThisIteration = []; 
+        
+        // Build a lookup of currently assigned variables for quick checks.
+        // This lookup reflects 'workingAssignments' at the START of this iteration.
+        mutable currentlyAssignedLookup = [false, size = nQubits];
+        for (varIdx, _) in workingAssignments {
             if varIdx >= 0 and varIdx < nQubits {
-                if isEffectivelyAssigned[varIdx] {
-                     alreadyAssignedInContext = true;
-                } else {
-                    // Check if it was added earlier in *this specific pass*
-                    for (newlyFoundVar, _) in newlyFoundAssignmentsInThisPass {
-                        if newlyFoundVar == varIdx {
-                            alreadyAssignedInContext = true;
-                            // No break in Q# for-loop like this, but flag is set
+                set currentlyAssignedLookup w/= varIdx <- true;
+            }
+        }
+
+        for clause in problem {
+            // FindUnitLiteral needs the current state of assignments (from workingAssignments).
+            let contextForFind = PartialAssignment(workingAssignments);
+            let unitLiteralInfo = FindUnitLiteral(clause, contextForFind); 
+
+            if (unitLiteralInfo[0] >= 0) { // A unit literal was found (varIdx >= 0)
+                let varIdx = unitLiteralInfo[0];
+                let valueToAssign = unitLiteralInfo[1] == 1; 
+                
+                // Check if this variable is not yet assigned (according to currentlyAssignedLookup)
+                // AND not already slated for addition in assignmentsFoundThisIteration 
+                // (to avoid duplicates if multiple clauses in this pass imply the same new assignment).
+                if varIdx >= 0 and varIdx < nQubits and not currentlyAssignedLookup[varIdx] {
+                    
+                    mutable alreadyFoundForThisIteration = false;
+                    for (foundVar, _) in assignmentsFoundThisIteration {
+                        if foundVar == varIdx {
+                            // If varIdx is already in assignmentsFoundThisIteration, ensure consistency or handle conflict.
+                            // For now, we assume the first one found is sufficient or conflicts are handled elsewhere.
+                            // We mark it as already found to prevent adding it again in this iteration.
+                            alreadyFoundForThisIteration = true;
                         }
                     }
-                }
-            } else {
-                alreadyAssignedInContext = true; // Out of bounds, effectively
-            }
-            
-            if (not alreadyAssignedInContext) {
-                set newlyFoundAssignmentsInThisPass += [(varIdx, value)];
-                // Update the lookup for the remainder of this pass
-                if varIdx >= 0 and varIdx < nQubits {
-                     set isEffectivelyAssigned w/= varIdx <- true;
+
+                    if not alreadyFoundForThisIteration {
+                        set assignmentsFoundThisIteration += [(varIdx, valueToAssign)];
+                        // We don't add to workingAssignments or update currentlyAssignedLookup immediately.
+                        // All assignments found in this iteration are collected first.
+                    }
                 }
             }
         }
-    }
-    return PartialAssignment(currentAssignments + newlyFoundAssignmentsInThisPass);
+
+        // After checking all clauses, if any new assignments were found in this iteration:
+        if (Length(assignmentsFoundThisIteration) > 0) {
+            set continueLooping = true; // A change was made, so we need to loop again.
+            
+            // Add all newly found assignments to workingAssignments.
+            for (newVarIdx, newValue) in assignmentsFoundThisIteration {
+                // Before adding, ensure it's not already in workingAssignments 
+                // (e.g. if logic becomes more complex, this is a safeguard).
+                // With current logic, this check is mostly for robustness as currentlyAssignedLookup should cover it.
+                mutable trulyNewToAdd = true;
+                if newVarIdx >=0 and newVarIdx < nQubits and currentlyAssignedLookup[newVarIdx]{
+                    trulyNewToAdd = false; // Should not happen if logic above is correct
+                }
+
+                if trulyNewToAdd {
+                     set workingAssignments += [(newVarIdx, newValue)];
+                     // The currentlyAssignedLookup will be rebuilt at the start of the next iteration.
+                }
+            }
+        }
+        // The repeat loop continues if continueLooping was true.
+    } until (not continueLooping);
+    
+    return PartialAssignment(workingAssignments);
 }
 
 /// # Summary
