@@ -863,54 +863,6 @@ operation GenerateRandomProblem(nQubits : Int, nClauses : Int, negationProbabili
     return problem;
 }
 
-operation GenerateComplexProblem(nQubits : Int, nClauses : Int, negationProbability : Double) : (Int, Bool)[][] {
-    // Start with a base random problem
-    mutable problem = GenerateRandomProblem(nQubits, nClauses / 2, negationProbability); 
-
-    // Add more structured and potentially harder clauses
-    let nAdditionalClauses = nClauses - Length(problem);
-    for _ in 0..nAdditionalClauses-1 {
-        mutable clause = [];
-        mutable varsInClause = [-1, -1, -1];
-
-        // Bias towards linking variables that are further apart or in specific patterns
-        let v1 = DrawRandomInt(0, nQubits - 1);
-        let v2 = (v1 + DrawRandomInt(0, nQubits / 3) + 1) % nQubits; // Link to a somewhat distant variable
-        let v3 = (v2 + DrawRandomInt(0, nQubits / 2) + 1) % nQubits; // Link to another distant variable
-        
-        // Ensure uniqueness if by chance they are the same after modulo operations
-        // This is a simplified uniqueness check for this generator.
-        // A more robust method would be similar to GenerateRandomProblem's uniqueness check.
-        if (v1 == v2 or v1 == v3 or v2 == v3) {
-            // Fallback to simple random selection for this clause if collision
-            for iLit in 0..2 {
-                mutable varIdx = -1;
-                mutable isUnique = false;
-                repeat {
-                    set varIdx = DrawRandomInt(0, nQubits - 1);
-                    set isUnique = true;
-                    for kChosen in 0..iLit-1 {
-                        if varsInClause[kChosen] == varIdx {
-                            set isUnique = false;
-                        }
-                    }
-                } until isUnique;
-                set varsInClause w/= iLit <- varIdx;
-                let isNegated = DrawRandomDouble(0.0, 1.0) < negationProbability;
-                set clause += [(varIdx, isNegated)];
-            }
-        } else {
-            set varsInClause = [v1, v2, v3];
-            for iLit in 0..2 {
-                let isNegated = DrawRandomDouble(0.0, 1.0) < (negationProbability + (DrawRandomDouble(0.0, 1.0) * 0.1 - 0.05)); // Slightly vary negation
-                set clause += [(varsInClause[iLit], isNegated)];
-            }
-        }
-        set problem += [clause];
-    }
-    return problem;
-}
-
 function Generate10QubitProblem() : (Int, Bool)[][] {
     return [
         [(0, false), (1, false), (2, false)],    // x0 OR x1 OR x2
