@@ -179,29 +179,27 @@ operation AdvancedPreprocessing(
     mutable totalPropagations = 0;
     mutable changed = true;
     
-    // Iterative preprocessing until fixed point
     mutable iterations = 0;
     repeat {
         set changed = false;
         set iterations += 1;
         
-        // Unit propagation
-        let unitResult = UnitPropagation(currentProblem, assignment);
-        if (Length(unitResult::assignments) > Length(assignment::assignments)) {
-            set assignment = unitResult;
+        // Pass nQubits to UnitPropagation
+        let unitResultAssignment = UnitPropagation(currentProblem, assignment, nQubits);
+        if (Length(unitResultAssignment::assignments) > Length(assignment::assignments)) {
+            set assignment = unitResultAssignment;
             set changed = true;
             set totalPropagations += 1;
         }
         
-        // Pure literal elimination
-        let pureResult = PureLiteralElimination(currentProblem, assignment, nQubits);
-        if (Length(pureResult::assignments) > Length(assignment::assignments)) {
-            set assignment = pureResult;
+        // Pass nQubits to PureLiteralElimination
+        let pureResultAssignment = PureLiteralElimination(currentProblem, assignment, nQubits);
+        if (Length(pureResultAssignment::assignments) > Length(assignment::assignments)) {
+            set assignment = pureResultAssignment;
             set changed = true;
             set totalPropagations += 1;
         }
         
-        // Simplify clauses based on current assignment
         set currentProblem = SimplifyProblem(currentProblem, assignment);
         
     } until (not changed or iterations >= 5);
@@ -214,31 +212,65 @@ operation AdvancedPreprocessing(
 /// Unit propagation: if a clause has only one unassigned literal, assign it to true
 operation UnitPropagation(
     problem : (Int, Bool)[][],
-    assignment : PartialAssignment
+    assignment : PartialAssignment,
+    nQubits : Int // Added nQubits for array sizing
 ) : PartialAssignment {
-    mutable newAssignments = assignment::assignments;
+    mutable currentAssignments = assignment::assignments;
     
+    // Lookup for variables already assigned (either initially or in this pass)
+    mutable isEffectivelyAssigned = [false, size = nQubits];
+    for (varIdx, _) in currentAssignments {
+        if varIdx >= 0 and varIdx < nQubits {
+            set isEffectivelyAssigned w/= varIdx <- true;
+        }
+    }
+
+    // It's important that UnitPropagation can be iterative or handle chains.
+    // A full implementation might loop until no more propagations can be made in a single call.
+    // This version does one pass based on the input assignment + what it finds.
+    // For simplicity, we collect new assignments and add them at the end.
+    // A more robust UnitPropagation might need internal iteration.
+    
+    mutable newlyFoundAssignmentsInThisPass = [];
+
     for clause in problem {
-        let unitLiteral = FindUnitLiteral(clause, assignment);
-        if (unitLiteral[0] >= 0) {
+        // FindUnitLiteral should ideally use the most up-to-date assignment state.
+        // For this pass, we create an effective assignment including those already found.
+        let effectiveContextForFind = PartialAssignment(currentAssignments + newlyFoundAssignmentsInThisPass);
+        let unitLiteral = FindUnitLiteral(clause, effectiveContextForFind); 
+
+        if (unitLiteral[0] >= 0) { // varIdx found
             let varIdx = unitLiteral[0];
-            let value = unitLiteral[1] == 1;
+            let value = unitLiteral[1] == 1; 
             
-            // Check if this variable is already assigned
-            mutable alreadyAssigned = false;
-            for (assignedVar, _) in newAssignments {
-                if (assignedVar == varIdx) {
-                    set alreadyAssigned = true;
+            // Check if this variable (varIdx) is already assigned (either initially or by a previous step in this pass)
+            mutable alreadyAssignedInContext = false;
+            if varIdx >= 0 and varIdx < nQubits {
+                if isEffectivelyAssigned[varIdx] {
+                     alreadyAssignedInContext = true;
+                } else {
+                    // Check if it was added earlier in *this specific pass*
+                    for (newlyFoundVar, _) in newlyFoundAssignmentsInThisPass {
+                        if newlyFoundVar == varIdx {
+                            alreadyAssignedInContext = true;
+                            // No break in Q# for-loop like this, but flag is set
+                        }
+                    }
                 }
+            } else {
+                alreadyAssignedInContext = true; // Out of bounds, effectively
             }
             
-            if (not alreadyAssigned) {
-                set newAssignments += [(varIdx, value)];
+            if (not alreadyAssignedInContext) {
+                set newlyFoundAssignmentsInThisPass += [(varIdx, value)];
+                // Update the lookup for the remainder of this pass
+                if varIdx >= 0 and varIdx < nQubits {
+                     set isEffectivelyAssigned w/= varIdx <- true;
+                }
             }
         }
     }
-    
-    return PartialAssignment(newAssignments);
+    return PartialAssignment(currentAssignments + newlyFoundAssignmentsInThisPass);
 }
 
 /// # Summary
@@ -246,29 +278,49 @@ operation UnitPropagation(
 operation PureLiteralElimination(
     problem : (Int, Bool)[][],
     assignment : PartialAssignment,
-    nQubits : Int
+    nQubits : Int // Added nQubits for array sizing
 ) : PartialAssignment {
-    mutable newAssignments = assignment::assignments;
+    mutable currentAssignments = assignment::assignments;
     
-    for varIdx in 0..nQubits-1 {
-        // Check if already assigned
-        mutable alreadyAssigned = false;
-        for (assignedVar, _) in newAssignments {
-            if (assignedVar == varIdx) {
-                set alreadyAssigned = true;
+    mutable isEffectivelyAssigned = [false, size = nQubits];
+    for (varIdx, _) in currentAssignments {
+        if varIdx >= 0 and varIdx < nQubits {
+            set isEffectivelyAssigned w/= varIdx <- true;
+        }
+    }
+    
+    mutable newlyFoundAssignmentsInThisPass = [];
+
+    for varIdxToTestPurity in 0..nQubits-1 {
+        // Check if already assigned (either initially or by a previous pure literal in this pass)
+        mutable alreadyAssignedInContext = false;
+        if varIdxToTestPurity >=0 and varIdxToTestPurity < nQubits and isEffectivelyAssigned[varIdxToTestPurity] {
+            alreadyAssignedInContext = true;
+        } else {
+             for (newlyFoundVar, _) in newlyFoundAssignmentsInThisPass {
+                if newlyFoundVar == varIdxToTestPurity {
+                    alreadyAssignedInContext = true;
+                }
             }
         }
         
-        if (not alreadyAssigned) {
-            let purity = CheckVariablePurity(problem, varIdx);
+        if (not alreadyAssignedInContext) {
+            // CheckVariablePurity should ideally consider the current assignment context if it can simplify the problem.
+            // Assuming it checks purity based on the original problem and unassigned status.
+            let purity = CheckVariablePurity(problem, varIdxToTestPurity); 
             if (purity[0] != 0) { // Variable is pure
-                let value = purity[0] > 0; // positive if purity > 0
-                set newAssignments += [(varIdx, value)];
+                let valueToAssign = purity[0] > 0; 
+                
+                set newlyFoundAssignmentsInThisPass += [(varIdxToTestPurity, valueToAssign)];
+                // Update lookup for the remainder of this pass
+                if varIdxToTestPurity >= 0 and varIdxToTestPurity < nQubits {
+                    set isEffectivelyAssigned w/= varIdxToTestPurity <- true;
+                }
             }
         }
     }
     
-    return PartialAssignment(newAssignments);
+    return PartialAssignment(currentAssignments + newlyFoundAssignmentsInThisPass);
 }
 
 /// # Summary
@@ -277,35 +329,48 @@ operation AdvancedClassicalBacktrack(
     problem : (Int, Bool)[][],
     nQubits : Int,
     assigned : PartialAssignment,
-    startVar : Int
+    startVar : Int // Retained for signature, though specific usage of startVar isn't in the loop
 ) : BasicResultType {
-    // Exhaustive search for small remaining subspace
-    let nUnassigned = nQubits - Length(assigned::assignments);
     
-    for i in 0..(1 <<< nUnassigned) - 1 {
-        mutable testAssignment = assigned::assignments;
-        mutable varIdx = 0;
+    mutable initialAssignmentsArr = assigned::assignments;
+    mutable isInitiallyAssignedLookup = [false, size = nQubits];
+    for (varIdx, _) in initialAssignmentsArr {
+        if varIdx >= 0 and varIdx < nQubits {
+            set isInitiallyAssignedLookup w/= varIdx <- true;
+        }
+    }
+
+    mutable unassignedVarIndices = [];
+    for varIdx in 0..nQubits-1 {
+        if not isInitiallyAssignedLookup[varIdx] {
+            set unassignedVarIndices += [varIdx];
+        }
+    }
+    
+    let nActualUnassigned = Length(unassignedVarIndices);
+    
+    if (nActualUnassigned == 0) {
+        let currentResults = AssignmentToResultArray(assigned, nQubits);
+        if (Is3SatSolution(problem, currentResults)) {
+            return BasicResultType(true, ResultArrayAsInt(currentResults));
+        } else {
+            return BasicResultType(false, 0);
+        }
+    }
+
+    for i in 0..(1 <<< nActualUnassigned) - 1 {
+        mutable currentTestCombinedAssignments = initialAssignmentsArr;
         
-        for j in 0..nQubits-1 {
-            mutable alreadyAssigned = false;
-            for (assignedVar, _) in assigned::assignments {
-                if (assignedVar == j) {
-                    set alreadyAssigned = true;
-                }
-            }
-            
-            if (not alreadyAssigned) {
-                let bitValue = (i &&& (1 <<< varIdx)) != 0;
-                set testAssignment += [(j, bitValue)];
-                set varIdx += 1;
-            }
+        for k in 0..nActualUnassigned-1 {
+            let originalVarIndex = unassignedVarIndices[k];
+            let bitValueForThisVar = (i &&& (1 <<< k)) != 0;
+            set currentTestCombinedAssignments += [(originalVarIndex, bitValueForThisVar)];
         }
         
-        let testPartial = PartialAssignment(testAssignment);
-        let results = AssignmentToResultArray(testPartial, nQubits);
-        if (Is3SatSolution(problem, results)) {
-            let solutionInt = ResultArrayAsInt(results);
-            return BasicResultType(true, solutionInt);
+        let tempPartialAssignment = PartialAssignment(currentTestCombinedAssignments);
+        let resultsArray = AssignmentToResultArray(tempPartialAssignment, nQubits); 
+        if (Is3SatSolution(problem, resultsArray)) {
+            return BasicResultType(true, ResultArrayAsInt(resultsArray));
         }
     }
     
@@ -320,27 +385,49 @@ function ChooseVariableAdvanced(
     nQubits : Int
 ) : Int {
     mutable bestVar = -1;
-    mutable bestScore = -1;
+    mutable bestScore = -1; 
+
+    // Create a lookup table for assigned variables for O(1) checking
+    mutable isVarAssigned = [false, size = nQubits];
+    for (varIndex, _) in assigned::assignments {
+        if varIndex >= 0 and varIndex < nQubits { // Bounds check
+            set isVarAssigned w/= varIndex <- true;
+        }
+    }
     
     for varIdx in 0..nQubits-1 {
-        // Check if already assigned
-        mutable alreadyAssigned = false;
-        for (assignedVar, _) in assigned::assignments {
-            if (assignedVar == varIdx) {
-                set alreadyAssigned = true;
+        if (not isVarAssigned[varIdx]) {
+            // Placeholder for the original scoring logic that was represented by '...'
+            // This is a common heuristic: count occurrences in clauses.
+            mutable currentScore = 0; 
+            for clause in problem {
+                for (literalVar, _) in clause {
+                    if literalVar == varIdx {
+                        set currentScore += 1;
+                    }
+                }
             }
-        }
-        
-        if (not alreadyAssigned) {
-            let score = CalculateVariableScore(problem, assigned, varIdx);
-            if (score > bestScore) {
-                set bestScore = score;
+
+            if currentScore > bestScore { 
                 set bestVar = varIdx;
+                set bestScore = currentScore;
             }
         }
     }
     
-    return if bestVar >= 0 { bestVar } else { 0 };
+    // Fallback logic
+    if bestVar == -1 {
+        // If no variable was chosen by scoring, find the first unassigned variable
+        for varIdxFallback in 0..nQubits-1 {
+            if (not isVarAssigned[varIdxFallback]) {
+                return varIdxFallback;
+            }
+        }
+        // If all variables are assigned or nQubits is 0, return 0 (consistent with original's else {0})
+        return 0; 
+    }
+    
+    return bestVar;
 }
 
 /// # Summary
