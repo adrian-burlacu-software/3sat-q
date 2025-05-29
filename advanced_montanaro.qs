@@ -25,7 +25,11 @@ operation AdvancedMontanaroMain() : Unit {
         (25, "Challenging 25-qubit problem"),
         (30, "Large-scale 30-qubit problem"),
         (35, "Very large-scale 35-qubit problem"),
-        (40, "Extremely large-scale 40-qubit problem")
+        (40, "Extremely large-scale 40-qubit problem"),
+        (45, "Massive 45-qubit problem"),
+        (50, "Gargantuan 50-qubit problem"),
+        (55, "Colossal 55-qubit problem"),
+        (60, "Astronomical 60-qubit problem")
     ];
     
     for (nQubits, description) in testCases {
@@ -744,6 +748,14 @@ function GenerateStructuredProblem(nQubits : Int) : (Int, Bool)[][] {
         return Generate35QubitProblem();
     } elif (nQubits == 40) {
         return Generate40QubitProblem();
+    } elif (nQubits == 45) {
+        return Generate45QubitProblem();
+    } elif (nQubits == 50) {
+        return Generate50QubitProblem();
+    } elif (nQubits == 55) {
+        return Generate55QubitProblem();
+    } elif (nQubits == 60) {
+        return Generate60QubitProblem();
     } else {
         return Generate10QubitProblem(); // Default fallback
     }
@@ -927,6 +939,172 @@ function Generate40QubitProblem() : (Int, Bool)[][] {
         [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
         [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
         [(0, true), (5, true), (10, true)],       // NOT x0 OR NOT x5 OR NOT x10
+        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
+        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
+        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
+        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
+        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
+        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
+        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
+        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
+        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
+        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
+        [(33, true), (34, true), (0, false)],     // NOT x33 OR NOT x34 OR x0
+        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
+        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
+        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
+        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
+        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
+        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
+        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
+        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
+        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
+    ];
+}
+
+function Generate45QubitProblem() : (Int, Bool)[][] {
+    return [
+        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
+        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
+        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
+        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
+        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
+        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
+        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
+        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
+        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
+        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
+        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
+        [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
+        [(36, false), (37, false), (38, false)],  // x36 OR x37 OR x38
+        [(39, false), (40, false), (41, false)],  // x39 OR x40 OR x41
+        [(42, false), (43, false), (44, false)],  // x42 OR x43 OR x44
+        [(0, true), (5, true), (10, true)],       // NOT x0 OR NOT x5 OR NOT x10
+        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
+        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
+        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
+        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
+        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
+        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
+        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
+        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
+        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
+        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
+        [(33, true), (34, true), (0, false)],     // NOT x33 OR NOT x34 OR x0
+        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
+        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
+        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
+        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
+        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
+        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
+        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
+        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
+        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
+    ];
+}
+
+function Generate50QubitProblem() : (Int, Bool)[][] {
+    return [
+        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
+        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
+        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
+        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
+        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
+        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
+        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
+        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
+        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
+        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
+        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
+        [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
+        [(36, false), (37, false), (38, false)],  // x36 OR x37 OR x38
+        [(39, false), (40, false), (41, false)],  // x39 OR x40 OR x41
+        [(42, false), (43, false), (44, false)],  // x42 OR x43 OR x44
+        [(45, false), (0, true), (10, true)],     // x45 OR NOT x0 OR NOT x10
+        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
+        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
+        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
+        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
+        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
+        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
+        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
+        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
+        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
+        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
+        [(33, true), (34, true), (0, false)],     // NOT x33 OR NOT x34 OR x0
+        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
+        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
+        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
+        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
+        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
+        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
+        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
+        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
+        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
+    ];
+}
+
+function Generate55QubitProblem() : (Int, Bool)[][] {
+    return [
+        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
+        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
+        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
+        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
+        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
+        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
+        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
+        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
+        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
+        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
+        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
+        [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
+        [(36, false), (37, false), (38, false)],  // x36 OR x37 OR x38
+        [(39, false), (40, false), (41, false)],  // x39 OR x40 OR x41
+        [(42, false), (43, false), (44, false)],  // x42 OR x43 OR x44
+        [(45, false), (46, false), (47, false)],  // x45 OR x46 OR x47
+        [(0, true), (5, true), (10, true)],       // NOT x0 OR NOT x5 OR NOT x10
+        [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
+        [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
+        [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
+        [(4, true), (9, true), (14, true)],       // NOT x4 OR NOT x9 OR NOT x14
+        [(15, true), (20, true), (25, true)],     // NOT x15 OR NOT x20 OR NOT x25
+        [(16, true), (21, true), (26, true)],     // NOT x16 OR NOT x21 OR NOT x26
+        [(17, true), (22, true), (27, true)],     // NOT x17 OR NOT x22 OR NOT x27
+        [(18, true), (23, true), (28, true)],     // NOT x18 OR NOT x23 OR NOT x28
+        [(19, true), (24, true), (29, true)],     // NOT x19 OR NOT x24 OR NOT x29
+        [(30, true), (31, true), (32, true)],     // NOT x30 OR NOT x31 OR NOT x32
+        [(33, true), (34, true), (0, false)],     // NOT x33 OR NOT x34 OR x0
+        [(1, false), (8, false), (15, false)],    // x1 OR x8 OR x15
+        [(2, false), (9, false), (16, false)],    // x2 OR x9 OR x16
+        [(3, false), (10, false), (17, false)],   // x3 OR x10 OR x17
+        [(4, false), (11, false), (18, false)],   // x4 OR x11 OR x18
+        [(5, false), (12, false), (19, false)],   // x5 OR x12 OR x19
+        [(6, false), (13, false), (20, false)],   // x6 OR x13 OR x20
+        [(21, false), (28, false), (5, true)],    // x21 OR x28 OR NOT x5
+        [(22, false), (29, false), (6, true)],    // x22 OR x29 OR NOT x6
+        [(23, false), (0, false), (7, true)]      // x23 OR x0 OR NOT x7
+    ];
+}
+
+function Generate60QubitProblem() : (Int, Bool)[][] {
+    return [
+        [(0, false), (1, false), (2, false)],     // x0 OR x1 OR x2
+        [(3, false), (4, false), (5, false)],     // x3 OR x4 OR x5
+        [(6, false), (7, false), (8, false)],     // x6 OR x7 OR x8
+        [(9, false), (10, false), (11, false)],   // x9 OR x10 OR x11
+        [(12, false), (13, false), (14, false)],  // x12 OR x13 OR x14
+        [(15, false), (16, false), (17, false)],  // x15 OR x16 OR x17
+        [(18, false), (19, false), (20, false)],  // x18 OR x19 OR x20
+        [(21, false), (22, false), (23, false)],  // x21 OR x22 OR x23
+        [(24, false), (25, false), (26, false)],  // x24 OR x25 OR x26
+        [(27, false), (28, false), (29, false)],  // x27 OR x28 OR x29
+        [(30, false), (31, false), (32, false)],  // x30 OR x31 OR x32
+        [(33, false), (34, false), (35, false)],  // x33 OR x34 OR x35
+        [(36, false), (37, false), (38, false)],  // x36 OR x37 OR x38
+        [(39, false), (40, false), (41, false)],  // x39 OR x40 OR x41
+        [(42, false), (43, false), (44, false)],  // x42 OR x43 OR x44
+        [(45, false), (46, false), (47, false)],  // x45 OR x46 OR x47
+        [(48, false), (49, false), (0, true)],     // x48 OR x49 OR NOT x0
         [(1, true), (6, true), (11, true)],       // NOT x1 OR NOT x6 OR NOT x11
         [(2, true), (7, true), (12, true)],       // NOT x2 OR NOT x7 OR NOT x12
         [(3, true), (8, true), (13, true)],       // NOT x3 OR NOT x8 OR NOT x13
