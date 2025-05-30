@@ -11,7 +11,6 @@ import Std.Arrays.*;
 import Std.Measurement.*;
 import Std.Diagnostics.*;
 
-@EntryPoint()
 operation OptimizedMontanaroMain() : Unit {
     // Test with both the original 10-qubit problem and a larger one
     Message("=== Testing Optimized Montanaro Algorithm ===");
