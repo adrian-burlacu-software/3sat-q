@@ -20,7 +20,6 @@ import Std.Diagnostics.*;
 import test_problem_generators.*;
 import quantum_subspace_has_promise.*;
 
-@EntryPoint()
 operation AdvancedMontanaroMain() : Unit {
     Message("=== Advanced Optimized Montanaro Algorithm ===");
     
