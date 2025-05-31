@@ -18,6 +18,7 @@ import Std.Arrays.*;
 import Std.Measurement.*;
 import Std.Diagnostics.*;
 import test_problem_generators.*;
+import quantum_subspace_has_promise.*;
 
 @EntryPoint()
 operation AdvancedMontanaroMain() : Unit {
@@ -67,7 +68,6 @@ operation AdvancedMontanaroMain() : Unit {
 // Define result types
 newtype AdvancedResultType = (found : Bool, solution : Int, stats : String);
 newtype BasicResultType = (found : Bool, solution : Int);
-newtype PartialAssignment = (assignments : (Int, Bool)[]);
 newtype SimplifiedProblem = (problem : (Int, Bool)[][], assignment : PartialAssignment);
 
 /// # Summary
@@ -120,11 +120,10 @@ operation AdvancedMontanaroRecursive(
 ) : BasicResultType {
     let currentNodeCount = nodeCount + 1;
     let currentMaxDepth = MaxI(maxDepth, depth);
-    
-    // Progress reporting for deep searches
-    if (depth % 5 == 0 and depth > 0) {
-        // Message($"Search depth {depth}, {Length(assigned::assignments)} variables assigned");
-    }
+      // Progress reporting for deep searches - more frequent for larger problems
+    // if (depth % 3 == 0 and depth > 0 and nQubits >= 25) {
+    //     Message($"Search depth {depth}, {Length(assigned::assignments)} variables assigned of {nQubits}");
+    // }
     
     // Base case: all variables assigned
     if (Length(assigned::assignments) == nQubits) {
@@ -145,10 +144,9 @@ operation AdvancedMontanaroRecursive(
     // Choose next variable using advanced heuristics
     let nextVar = ChooseVariableAdvanced(problem, assigned, nQubits);
     let nUnassigned = nQubits - Length(assigned::assignments);
-    
-    // Adaptive strategy selection
-    if (nUnassigned <= 8) {
-        // Use classical backtracking for small subspaces
+      // Adaptive strategy selection - more aggressive quantum approach
+    if (nUnassigned <= 4) {
+        // Use classical backtracking only for very small subspaces
         return AdvancedClassicalBacktrack(problem, nQubits, assigned, nextVar);
     }
     
@@ -158,9 +156,19 @@ operation AdvancedMontanaroRecursive(
     for value in valueOrder {
         let newAssignment = PartialAssignment(assigned::assignments + [(nextVar, value)]);
         
-        // Multi-level pruning
-        if (IsAssignmentPromising(problem, nQubits, newAssignment)) {
-            if (QuantumSubspaceHasPromise(problem, nQubits, newAssignment)) {
+        // Relaxed pruning for larger problems - less aggressive filtering
+        if (IsAssignmentPromisingRelaxed(problem, nQubits, newAssignment)) {
+            // Always try quantum subspace for larger problems, skip expensive promise check for deep searches
+            mutable useQuantum = true;
+            if (nUnassigned > 15) {
+                // For very large subspaces, always use quantum without additional checks
+                useQuantum = true;
+            } else {
+                // Only check quantum promise for medium-sized subspaces
+                useQuantum = QuantumSubspaceHasPromise(problem, nQubits, newAssignment);
+            }
+            
+            if (useQuantum) {
                 let res = AdvancedMontanaroRecursive(
                     problem, 
                     nQubits, 
@@ -192,8 +200,7 @@ operation AdvancedPreprocessing(
     mutable totalPropagations = 0;
     mutable changed = true;
     
-    mutable iterations = 0;
-    repeat {
+    mutable iterations = 0;    repeat {
         set changed = false;
         set iterations += 1;
         
@@ -213,9 +220,14 @@ operation AdvancedPreprocessing(
             set totalPropagations += 1;
         }
         
+        // Add subsumption elimination for larger problems
+        if (nQubits >= 25) {
+            set currentProblem = EliminateSubsumedClauses(currentProblem);
+        }
+        
         set currentProblem = SimplifyProblem(currentProblem, assignment);
         
-    } until (not changed or iterations >= 5);
+    } until (not changed or iterations >= 10); // Allow more iterations for larger problems
     
     Message($"Preprocessing: {totalPropagations} propagations in {iterations} iterations");
     return SimplifiedProblem(currentProblem, assignment);
@@ -309,7 +321,7 @@ operation UnitPropagation(
 
 /// # Summary
 /// Pure literal elimination: if a variable appears only positively or only negatively, assign it
-operation PureLiteralElimination(
+function PureLiteralElimination(
     problem : (Int, Bool)[][],
     assignment : PartialAssignment,
     nQubits : Int // Added nQubits for array sizing
@@ -359,7 +371,7 @@ operation PureLiteralElimination(
 
 /// # Summary
 /// Advanced classical backtracking for small subspaces
-operation AdvancedClassicalBacktrack(
+function AdvancedClassicalBacktrack(
     problem : (Int, Bool)[][],
     nQubits : Int,
     assigned : PartialAssignment,
@@ -464,6 +476,64 @@ function ChooseVariableAdvanced(
     return bestVar;
 }
 
+function ChooseVariableEnhanced(
+    problem : (Int, Bool)[][],
+    assigned : PartialAssignment,
+    nQubits : Int
+) : Int {
+    mutable bestVar = -1;
+    mutable bestScore = -1.0; 
+
+    // Create a lookup table for assigned variables for O(1) checking
+    mutable isVarAssigned = [false, size = nQubits];
+    for (varIndex, _) in assigned::assignments {
+        if varIndex >= 0 and varIndex < nQubits {
+            set isVarAssigned w/= varIndex <- true;
+        }
+    }
+    
+    for varIdx in 0..nQubits-1 {
+        if (not isVarAssigned[varIdx]) {
+            // Enhanced scoring: JEROSLOW-WANG heuristic
+            mutable currentScore = 0.0;
+            for clause in problem {
+                mutable clauseUnassignedSize = 0;
+                mutable containsVar = false;
+                
+                for (literalVar, _) in clause {
+                    if (literalVar == varIdx) {
+                        set containsVar = true;
+                    }
+                    if (not isVarAssigned[literalVar]) {
+                        set clauseUnassignedSize += 1;
+                    }
+                }
+                
+                if (containsVar and clauseUnassignedSize > 0) {
+                    set currentScore += 1.0 / IntAsDouble(1 <<< clauseUnassignedSize);
+                }
+            }
+
+            if (currentScore > bestScore) { 
+                set bestVar = varIdx;
+                set bestScore = currentScore;
+            }
+        }
+    }
+    
+    // Fallback logic
+    if (bestVar == -1) {
+        for varIdxFallback in 0..nQubits-1 {
+            if (not isVarAssigned[varIdxFallback]) {
+                return varIdxFallback;
+            }
+        }
+        return 0; 
+    }
+    
+    return bestVar;
+}
+
 function DetermineValueOrder(
     problem : (Int, Bool)[][],
     assigned : PartialAssignment,
@@ -492,21 +562,26 @@ function IsAssignmentPromising(
     }
     
     // More sophisticated pruning for medium subspaces
-    return EstimateSolutionDensity(problem, assignment) > 0.001;
+    return EstimateSolutionDensity(problem, assignment, nQubits) > 0.001;
 }
 
-function QuantumSubspaceHasPromise(
+function IsAssignmentPromisingRelaxed(
     problem : (Int, Bool)[][],
     nQubits : Int,
     assignment : PartialAssignment
 ) : Bool {
-    let nUnassigned = nQubits - Length(assignment::assignments);
-    if (nUnassigned > 15) {
-        return true; // Always promising for large subspaces
+    // Much more relaxed pruning for larger problems
+    if (HasConflict(problem, assignment)) {
+        return false;
     }
     
-    // Use quantum amplitude estimation for medium subspaces
-    return true; // Simplified - always promising for now
+    let nUnassigned = nQubits - Length(assignment::assignments);
+    if (nUnassigned > 20) {
+        return true; // Never prune very large subspaces
+    }
+    
+    // More lenient pruning threshold
+    return EstimateSolutionDensity(problem, assignment, nQubits) > 0.0001;
 }
 
 function FindUnitLiteral(clause : (Int, Bool)[], assignment : PartialAssignment) : Int[] {
@@ -703,11 +778,12 @@ function HasConflict(problem : (Int, Bool)[][], assigned : PartialAssignment) : 
 
 function EstimateSolutionDensity(
     problem : (Int, Bool)[][],
-    assignment : PartialAssignment
+    assignment : PartialAssignment,
+    nQubits : Int
 ) : Double {
     // Simplified estimation - in practice would use more sophisticated methods
     mutable nUnassigned = 0;
-    for varIdx in 0..20 { // Note: This 0..20 might need adjustment if nQubits can be < 20.
+    for varIdx in 0..nQubits-1 { // Fixed to use nQubits instead of hardcoded 20
         if (not IsVariableAssigned(varIdx, assignment)) {
             set nUnassigned += 1;
         }
@@ -717,9 +793,9 @@ function EstimateSolutionDensity(
         return 1.0;
     }
     
-    // Rough heuristic based on clause density
-    let clauseDensity = IntAsDouble(Length(problem)) / IntAsDouble(1 <<< nUnassigned);
-    return 1.0 / (1.0 + clauseDensity);
+    // Rough heuristic based on clause density - more optimistic for larger problems
+    let clauseDensity = IntAsDouble(Length(problem)) / IntAsDouble(1 <<< MinI(nUnassigned, 20)); // Cap to prevent overflow
+    return 1.0 / (1.0 + clauseDensity * 0.5); // More optimistic scaling
 }
 
 function IsVariableAssigned(varIdx : Int, assignment : PartialAssignment) : Bool {
@@ -772,6 +848,48 @@ function Is3SatSolution(problem : (Int, Bool)[][], results : Result[]) : Bool {
             if litSat { set clauseSat = true; }
         }
         if not clauseSat { return false; }
+    }
+    return true;
+}
+
+/// # Summary
+/// Enhanced preprocessing functions for larger problems
+function EliminateSubsumedClauses(problem : (Int, Bool)[][]) : (Int, Bool)[][] {
+    mutable result = [];
+    
+    for i in 0..Length(problem)-1 {
+        let clauseI = problem[i];
+        mutable isSubsumed = false;
+        
+        for j in 0..Length(problem)-1 {
+            if (i != j) {
+                let clauseJ = problem[j];
+                if (IsClauseSubsumedBy(clauseI, clauseJ)) {
+                    set isSubsumed = true;
+                }
+            }
+        }
+        
+        if (not isSubsumed) {
+            set result += [clauseI];
+        }
+    }
+    
+    return result;
+}
+
+function IsClauseSubsumedBy(clause1 : (Int, Bool)[], clause2 : (Int, Bool)[]) : Bool {
+    // clause1 is subsumed by clause2 if all literals in clause2 appear in clause1
+    for (var2, neg2) in clause2 {
+        mutable found = false;
+        for (var1, neg1) in clause1 {
+            if (var1 == var2 and neg1 == neg2) {
+                set found = true;
+            }
+        }
+        if (not found) {
+            return false;
+        }
     }
     return true;
 }
