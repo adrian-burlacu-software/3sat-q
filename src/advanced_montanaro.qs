@@ -20,8 +20,12 @@ import Std.Diagnostics.*;
 import test_problem_generators.*;
 import quantum_subspace_has_promise.*;
 
+
+
+@EntryPoint()
 operation AdvancedMontanaroMain() : Unit {
-    Message("=== Advanced Optimized Montanaro Algorithm ===");
+    let DEBUG_OUTPUT = true; // Set to false for production runs
+    if (DEBUG_OUTPUT) { Message("=== Advanced Optimized Montanaro Algorithm ==="); }
     
     // Test progression: 10 -> 15 -> 20 -> 25 -> 30 qubits
     let testCases = [
@@ -39,28 +43,25 @@ operation AdvancedMontanaroMain() : Unit {
     ];
     
     for (nQubits, description) in testCases {
-        Message($"=== Testing {description} ===");
-        // GenerateStructuredProblem is now called from the Quantum3SAT.TestProblems namespace
+        if (DEBUG_OUTPUT) { Message($"=== Testing {description} ==="); }
         let problem = GenerateStructuredProblem(nQubits); 
-        Message($"Problem: {nQubits} variables, {Length(problem)} clauses");
+        if (DEBUG_OUTPUT) { Message($"Problem: {nQubits} variables, {Length(problem)} clauses"); }
         
         let result = AdvancedMontanaroSolver(problem, nQubits);
         
         if (result::found) {
-            Message($"✓ Solution found: {result::solution}");
-            
-            // Verify solution
+            if (DEBUG_OUTPUT) { Message($"✓ Solution found: {result::solution}"); }
             let assignment = IntToResultArray(result::solution, nQubits);
             if (Is3SatSolution(problem, assignment)) {
-                Message("✓ Solution verified as correct!");
+                if (DEBUG_OUTPUT) { Message("✓ Solution verified as correct!"); }
             } else {
-                Message("✗ WARNING: Solution verification failed!");
+                if (DEBUG_OUTPUT) { Message("✗ WARNING: Solution verification failed!"); }
             }
         } else {
-            Message("✗ No solution found");
+            if (DEBUG_OUTPUT) { Message("✗ No solution found"); }
         }
         
-        Message($"Search statistics: {result::stats}");
+        if (DEBUG_OUTPUT) { Message($"Search statistics: {result::stats}"); }
     }
 }
 
@@ -75,19 +76,18 @@ operation AdvancedMontanaroSolver(
     problem : (Int, Bool)[][],
     nQubits : Int
 ) : AdvancedResultType {
-    Message("Starting advanced preprocessing...");
+   // if (DEBUG_OUTPUT) { Message("Starting advanced preprocessing..."); }
     
     // Preprocessing phase
     let preprocessed = AdvancedPreprocessing(problem, nQubits);
     
     if (Length(preprocessed::assignment::assignments) == nQubits) {
-        // Fully solved during preprocessing
-        Message("Problem solved during preprocessing!");
+        //if (DEBUG_OUTPUT) { Message("Problem solved during preprocessing!"); }
         let solutionInt = ResultArrayAsInt(AssignmentToResultArray(preprocessed::assignment, nQubits));
         return AdvancedResultType(true, solutionInt, "Preprocessing");
     }
     
-    Message($"Preprocessing complete. {Length(preprocessed::assignment::assignments)} variables assigned.");
+    //if (DEBUG_OUTPUT) { Message($"Preprocessing complete. {Length(preprocessed::assignment::assignments)} variables assigned."); }
     
     // Main search phase
     let result = AdvancedMontanaroRecursive(
@@ -119,11 +119,7 @@ operation AdvancedMontanaroRecursive(
 ) : BasicResultType {
     let currentNodeCount = nodeCount + 1;
     let currentMaxDepth = MaxI(maxDepth, depth);
-      // Progress reporting for deep searches - more frequent for larger problems
-    // if (depth % 3 == 0 and depth > 0 and nQubits >= 25) {
-    //     Message($"Search depth {depth}, {Length(assigned::assignments)} variables assigned of {nQubits}");
-    // }
-    
+
     // Base case: all variables assigned
     if (Length(assigned::assignments) == nQubits) {
         let results = AssignmentToResultArray(assigned, nQubits);
@@ -135,38 +131,27 @@ operation AdvancedMontanaroRecursive(
         }
     }
     
-    // Conflict detection: check if any clauses are already unsatisfiable
+    // Fast conflict detection
     if (HasConflict(problem, assigned)) {
         return BasicResultType(false, 0);
     }
     
-    // Choose next variable using advanced heuristics
     let nextVar = ChooseVariableAdvanced(problem, assigned, nQubits);
     let nUnassigned = nQubits - Length(assigned::assignments);
-      // Adaptive strategy selection - more aggressive quantum approach
     if (nUnassigned <= 4) {
-        // Use classical backtracking only for very small subspaces
         return AdvancedClassicalBacktrack(problem, nQubits, assigned, nextVar);
     }
     
-    // Try both values with smart ordering (most promising first)
     let valueOrder = DetermineValueOrder(problem, assigned, nextVar);
-    
     for value in valueOrder {
         let newAssignment = PartialAssignment(assigned::assignments + [(nextVar, value)]);
-        
-        // Relaxed pruning for larger problems - less aggressive filtering
         if (IsAssignmentPromisingRelaxed(problem, nQubits, newAssignment)) {
-            // Always try quantum subspace for larger problems, skip expensive promise check for deep searches
             mutable useQuantum = true;
             if (nUnassigned > 15) {
-                // For very large subspaces, always use quantum without additional checks
                 useQuantum = true;
             } else {
-                // Only check quantum promise for medium-sized subspaces
                 useQuantum = QuantumSubspaceHasPromise(problem, nQubits, newAssignment);
             }
-            
             if (useQuantum) {
                 let res = AdvancedMontanaroRecursive(
                     problem, 
@@ -184,7 +169,6 @@ operation AdvancedMontanaroRecursive(
             }
         }
     }
-    
     return BasicResultType(false, 0);
 }
 
@@ -198,37 +182,28 @@ operation AdvancedPreprocessing(
     mutable assignment = PartialAssignment([]);
     mutable totalPropagations = 0;
     mutable changed = true;
-    
-    mutable iterations = 0;    repeat {
+    mutable iterations = 0;
+    repeat {
         set changed = false;
         set iterations += 1;
-        
-        // Pass nQubits to UnitPropagation
         let unitResultAssignment = UnitPropagation(currentProblem, assignment, nQubits);
         if (Length(unitResultAssignment::assignments) > Length(assignment::assignments)) {
             set assignment = unitResultAssignment;
             set changed = true;
             set totalPropagations += 1;
         }
-        
-        // Pass nQubits to PureLiteralElimination
         let pureResultAssignment = PureLiteralElimination(currentProblem, assignment, nQubits);
         if (Length(pureResultAssignment::assignments) > Length(assignment::assignments)) {
             set assignment = pureResultAssignment;
             set changed = true;
             set totalPropagations += 1;
         }
-        
-        // Add subsumption elimination for larger problems
         if (nQubits >= 25) {
             set currentProblem = EliminateSubsumedClauses(currentProblem);
         }
-        
         set currentProblem = SimplifyProblem(currentProblem, assignment);
-        
-    } until (not changed or iterations >= 10); // Allow more iterations for larger problems
-    
-    Message($"Preprocessing: {totalPropagations} propagations in {iterations} iterations");
+    } until (not changed or iterations >= 10);
+    // if (DEBUG_OUTPUT) { Message($"Preprocessing: {totalPropagations} propagations in {iterations} iterations"); }
     return SimplifiedProblem(currentProblem, assignment);
 }
 
@@ -236,83 +211,51 @@ operation AdvancedPreprocessing(
 /// Unit propagation: if a clause has only one unassigned literal, assign it to true
 operation UnitPropagation(
     problem : (Int, Bool)[][],
-    initialProblemAssignment : PartialAssignment, // Renamed from 'assignment' for clarity
+    initialProblemAssignment : PartialAssignment,
     nQubits : Int 
 ) : PartialAssignment {
-    mutable workingAssignments = initialProblemAssignment::assignments; // This list will be updated iteratively
-
-    // UnitPropagation is iterative to handle chains of implications.
-    // It loops internally until no more unit propagations can be made in a single call.
+    mutable workingAssignments = initialProblemAssignment::assignments;
     mutable continueLooping = true;
     repeat {
-        set continueLooping = false; // Assume no changes in this iteration initially
-        
-        // Assignments found specifically in *this current iteration* of the repeat loop.
+        set continueLooping = false;
         mutable assignmentsFoundThisIteration = []; 
-        
-        // Build a lookup of currently assigned variables for quick checks.
-        // This lookup reflects 'workingAssignments' at the START of this iteration.
         mutable currentlyAssignedLookup = [false, size = nQubits];
         for (varIdx, _) in workingAssignments {
             if varIdx >= 0 and varIdx < nQubits {
                 set currentlyAssignedLookup w/= varIdx <- true;
             }
         }
-
         for clause in problem {
-            // FindUnitLiteral needs the current state of assignments (from workingAssignments).
             let contextForFind = PartialAssignment(workingAssignments);
             let unitLiteralInfo = FindUnitLiteral(clause, contextForFind); 
-
-            if (unitLiteralInfo[0] >= 0) { // A unit literal was found (varIdx >= 0)
+            if (unitLiteralInfo[0] >= 0) {
                 let varIdx = unitLiteralInfo[0];
                 let valueToAssign = unitLiteralInfo[1] == 1; 
-                
-                // Check if this variable is not yet assigned (according to currentlyAssignedLookup)
-                // AND not already slated for addition in assignmentsFoundThisIteration 
-                // (to avoid duplicates if multiple clauses in this pass imply the same new assignment).
                 if varIdx >= 0 and varIdx < nQubits and not currentlyAssignedLookup[varIdx] {
-                    
                     mutable alreadyFoundForThisIteration = false;
                     for (foundVar, _) in assignmentsFoundThisIteration {
                         if foundVar == varIdx {
-                            // If varIdx is already in assignmentsFoundThisIteration, ensure consistency or handle conflict.
-                            // For now, we assume the first one found is sufficient or conflicts are handled elsewhere.
-                            // We mark it as already found to prevent adding it again in this iteration.
                             alreadyFoundForThisIteration = true;
                         }
                     }
-
                     if not alreadyFoundForThisIteration {
                         set assignmentsFoundThisIteration += [(varIdx, valueToAssign)];
-                        // We don't add to workingAssignments or update currentlyAssignedLookup immediately.
-                        // All assignments found in this iteration are collected first.
                     }
                 }
             }
         }
-
-        // After checking all clauses, if any new assignments were found in this iteration:
         if (Length(assignmentsFoundThisIteration) > 0) {
-            set continueLooping = true; // A change was made, so we need to loop again.
-            
-            // Add all newly found assignments to workingAssignments.
+            set continueLooping = true;
             for (newVarIdx, newValue) in assignmentsFoundThisIteration {
-                // Before adding, ensure it's not already in workingAssignments 
-                // (e.g. if logic becomes more complex, this is a safeguard).
-                // With current logic, this check is mostly for robustness as currentlyAssignedLookup should cover it.
                 mutable trulyNewToAdd = true;
                 if newVarIdx >=0 and newVarIdx < nQubits and currentlyAssignedLookup[newVarIdx]{
-                    trulyNewToAdd = false; // Should not happen if logic above is correct
+                    trulyNewToAdd = false;
                 }
-
                 if trulyNewToAdd {
                      set workingAssignments += [(newVarIdx, newValue)];
-                     // The currentlyAssignedLookup will be rebuilt at the start of the next iteration.
                 }
             }
         }
-        // The repeat loop continues if continueLooping was true.
     } until (not continueLooping);
     
     return PartialAssignment(workingAssignments);
@@ -323,21 +266,17 @@ operation UnitPropagation(
 function PureLiteralElimination(
     problem : (Int, Bool)[][],
     assignment : PartialAssignment,
-    nQubits : Int // Added nQubits for array sizing
+    nQubits : Int
 ) : PartialAssignment {
     mutable currentAssignments = assignment::assignments;
-    
     mutable isEffectivelyAssigned = [false, size = nQubits];
     for (varIdx, _) in currentAssignments {
         if varIdx >= 0 and varIdx < nQubits {
             set isEffectivelyAssigned w/= varIdx <- true;
         }
     }
-    
     mutable newlyFoundAssignmentsInThisPass = [];
-
     for varIdxToTestPurity in 0..nQubits-1 {
-        // Check if already assigned (either initially or by a previous pure literal in this pass)
         mutable alreadyAssignedInContext = false;
         if varIdxToTestPurity >=0 and varIdxToTestPurity < nQubits and isEffectivelyAssigned[varIdxToTestPurity] {
             alreadyAssignedInContext = true;
@@ -348,23 +287,17 @@ function PureLiteralElimination(
                 }
             }
         }
-        
         if (not alreadyAssignedInContext) {
-            // CheckVariablePurity should ideally consider the current assignment context if it can simplify the problem.
-            // Assuming it checks purity based on the original problem and unassigned status.
             let purity = CheckVariablePurity(problem, varIdxToTestPurity); 
-            if (purity[0] != 0) { // Variable is pure
+            if (purity[0] != 0) {
                 let valueToAssign = purity[0] > 0; 
-                
                 set newlyFoundAssignmentsInThisPass += [(varIdxToTestPurity, valueToAssign)];
-                // Update lookup for the remainder of this pass
                 if varIdxToTestPurity >= 0 and varIdxToTestPurity < nQubits {
                     set isEffectivelyAssigned w/= varIdxToTestPurity <- true;
                 }
             }
         }
     }
-    
     return PartialAssignment(currentAssignments + newlyFoundAssignmentsInThisPass);
 }
 
@@ -374,26 +307,22 @@ function AdvancedClassicalBacktrack(
     problem : (Int, Bool)[][],
     nQubits : Int,
     assigned : PartialAssignment,
-    startVar : Int // Retained for signature, though specific usage of startVar isn't in the loop
+    startVar : Int
 ) : BasicResultType {
-    
     mutable initialAssignmentsArr = assigned::assignments;
     mutable isInitiallyAssignedLookup = [false, size = nQubits];
     for (varIdx, _) in initialAssignmentsArr {
-        if varIdx >= 0 and varIdx < nQubits {
+        if (varIdx >= 0 and varIdx < nQubits) {
             set isInitiallyAssignedLookup w/= varIdx <- true;
         }
     }
-
     mutable unassignedVarIndices = [];
     for varIdx in 0..nQubits-1 {
         if not isInitiallyAssignedLookup[varIdx] {
             set unassignedVarIndices += [varIdx];
         }
     }
-    
     let nActualUnassigned = Length(unassignedVarIndices);
-    
     if (nActualUnassigned == 0) {
         let currentResults = AssignmentToResultArray(assigned, nQubits);
         if (Is3SatSolution(problem, currentResults)) {
@@ -402,23 +331,19 @@ function AdvancedClassicalBacktrack(
             return BasicResultType(false, 0);
         }
     }
-
     for i in 0..(1 <<< nActualUnassigned) - 1 {
         mutable currentTestCombinedAssignments = initialAssignmentsArr;
-        
         for k in 0..nActualUnassigned-1 {
             let originalVarIndex = unassignedVarIndices[k];
             let bitValueForThisVar = (i &&& (1 <<< k)) != 0;
             set currentTestCombinedAssignments += [(originalVarIndex, bitValueForThisVar)];
         }
-        
         let tempPartialAssignment = PartialAssignment(currentTestCombinedAssignments);
         let resultsArray = AssignmentToResultArray(tempPartialAssignment, nQubits); 
         if (Is3SatSolution(problem, resultsArray)) {
             return BasicResultType(true, ResultArrayAsInt(resultsArray));
         }
     }
-    
     return BasicResultType(false, 0);
 }
 
@@ -431,19 +356,14 @@ function ChooseVariableAdvanced(
 ) : Int {
     mutable bestVar = -1;
     mutable bestScore = -1; 
-
-    // Create a lookup table for assigned variables for O(1) checking
     mutable isVarAssigned = [false, size = nQubits];
     for (varIndex, _) in assigned::assignments {
-        if varIndex >= 0 and varIndex < nQubits { // Bounds check
+        if varIndex >= 0 and varIndex < nQubits { 
             set isVarAssigned w/= varIndex <- true;
         }
     }
-    
     for varIdx in 0..nQubits-1 {
         if (not isVarAssigned[varIdx]) {
-            // Placeholder for the original scoring logic that was represented by '...'
-            // This is a common heuristic: count occurrences in clauses.
             mutable currentScore = 0; 
             for clause in problem {
                 for (literalVar, _) in clause {
@@ -452,76 +372,13 @@ function ChooseVariableAdvanced(
                     }
                 }
             }
-
             if currentScore > bestScore { 
                 set bestVar = varIdx;
                 set bestScore = currentScore;
             }
         }
     }
-    
-    // Fallback logic
     if bestVar == -1 {
-        // If no variable was chosen by scoring, find the first unassigned variable
-        for varIdxFallback in 0..nQubits-1 {
-            if (not isVarAssigned[varIdxFallback]) {
-                return varIdxFallback;
-            }
-        }
-        // If all variables are assigned or nQubits is 0, return 0 (consistent with original's else {0})
-        return 0; 
-    }
-    
-    return bestVar;
-}
-
-function ChooseVariableEnhanced(
-    problem : (Int, Bool)[][],
-    assigned : PartialAssignment,
-    nQubits : Int
-) : Int {
-    mutable bestVar = -1;
-    mutable bestScore = -1.0; 
-
-    // Create a lookup table for assigned variables for O(1) checking
-    mutable isVarAssigned = [false, size = nQubits];
-    for (varIndex, _) in assigned::assignments {
-        if varIndex >= 0 and varIndex < nQubits {
-            set isVarAssigned w/= varIndex <- true;
-        }
-    }
-    
-    for varIdx in 0..nQubits-1 {
-        if (not isVarAssigned[varIdx]) {
-            // Enhanced scoring: JEROSLOW-WANG heuristic
-            mutable currentScore = 0.0;
-            for clause in problem {
-                mutable clauseUnassignedSize = 0;
-                mutable containsVar = false;
-                
-                for (literalVar, _) in clause {
-                    if (literalVar == varIdx) {
-                        set containsVar = true;
-                    }
-                    if (not isVarAssigned[literalVar]) {
-                        set clauseUnassignedSize += 1;
-                    }
-                }
-                
-                if (containsVar and clauseUnassignedSize > 0) {
-                    set currentScore += 1.0 / IntAsDouble(1 <<< clauseUnassignedSize);
-                }
-            }
-
-            if (currentScore > bestScore) { 
-                set bestVar = varIdx;
-                set bestScore = currentScore;
-            }
-        }
-    }
-    
-    // Fallback logic
-    if (bestVar == -1) {
         for varIdxFallback in 0..nQubits-1 {
             if (not isVarAssigned[varIdxFallback]) {
                 return varIdxFallback;
@@ -529,7 +386,6 @@ function ChooseVariableEnhanced(
         }
         return 0; 
     }
-    
     return bestVar;
 }
 
@@ -540,28 +396,7 @@ function DetermineValueOrder(
 ) : Bool[] {
     let trueScore = CountSatisfiedClauses(problem, assigned, varIdx, true);
     let falseScore = CountSatisfiedClauses(problem, assigned, varIdx, false);
-    
     return if trueScore >= falseScore { [true, false] } else { [false, true] };
-}
-
-function IsAssignmentPromising(
-    problem : (Int, Bool)[][],
-    nQubits : Int,
-    assignment : PartialAssignment
-) : Bool {
-    // Check for obvious conflicts
-    if (HasConflict(problem, assignment)) {
-        return false;
-    }
-    
-    // Check remaining search space size
-    let nUnassigned = nQubits - Length(assignment::assignments);
-    if (nUnassigned > 12) {
-        return true; // Don't prune large subspaces
-    }
-    
-    // More sophisticated pruning for medium subspaces
-    return EstimateSolutionDensity(problem, assignment, nQubits) > 0.001;
 }
 
 function IsAssignmentPromisingRelaxed(
@@ -569,207 +404,22 @@ function IsAssignmentPromisingRelaxed(
     nQubits : Int,
     assignment : PartialAssignment
 ) : Bool {
-    // Much more relaxed pruning for larger problems
     if (HasConflict(problem, assignment)) {
         return false;
     }
-    
     let nUnassigned = nQubits - Length(assignment::assignments);
     if (nUnassigned > 20) {
-        return true; // Never prune very large subspaces
+        return true;
     }
-    
-    // More lenient pruning threshold
     return EstimateSolutionDensity(problem, assignment, nQubits) > 0.0001;
 }
 
-function FindUnitLiteral(clause : (Int, Bool)[], assignment : PartialAssignment) : Int[] {
-    mutable unassigned = [];
-    mutable satisfied = false;
-    
-    for (varIdx, isNegated) in clause {
-        mutable isAssigned = false;
-        mutable assignedValue = false;
-        
-        for (assignedVar, value) in assignment::assignments {
-            if (assignedVar == varIdx) {
-                set isAssigned = true;
-                set assignedValue = value;
-            }
-        }
-        
-        if (isAssigned) {
-            let literalSatisfied = (not isNegated and assignedValue) or (isNegated and not assignedValue);
-            if (literalSatisfied) {
-                set satisfied = true;
-            }
-        } else {
-            set unassigned += [(varIdx, isNegated)];
-        }
-    }
-    
-    if (satisfied or Length(unassigned) != 1) {
-        return [-1, 0]; // Not a unit clause
-    }
-    
-    let (varIdx, isNegated) = unassigned[0];
-    return [varIdx, if isNegated { 0 } else { 1 }];
-}
-
-function CheckVariablePurity(problem : (Int, Bool)[][], varIdx : Int) : Int[] {
-    mutable positiveOccurrences = 0;
-    mutable negativeOccurrences = 0;
-    
-    for clause in problem {
-        for (clauseVar, isNegated) in clause {
-            if (clauseVar == varIdx) {
-                if (isNegated) {
-                    set negativeOccurrences += 1;
-                } else {
-                    set positiveOccurrences += 1;
-                }
-            }
-        }
-    }
-    
-    if (positiveOccurrences > 0 and negativeOccurrences == 0) {
-        return [1]; // Pure positive
-    } elif (negativeOccurrences > 0 and positiveOccurrences == 0) {
-        return [-1]; // Pure negative
-    } else {
-        return [0]; // Not pure
-    }
-}
-
-function SimplifyProblem(
-    problem : (Int, Bool)[][],
-    assignment : PartialAssignment
-) : (Int, Bool)[][] {
-    mutable simplified = [];
-    
-    for clause in problem {
-        let simplifiedClause = SimplifyClause(clause, assignment);
-        if (Length(simplifiedClause) > 0) {
-            set simplified += [simplifiedClause];
-        }
-    }
-    
-    return simplified;
-}
-
-function SimplifyClause(
-    clause : (Int, Bool)[],
-    assignment : PartialAssignment
-) : (Int, Bool)[] {
-    mutable simplified = [];
-    mutable satisfied = false;
-    
-    for (varIdx, isNegated) in clause {
-        mutable isAssigned = false;
-        mutable assignedValue = false;
-        
-        for (assignedVar, value) in assignment::assignments {
-            if (assignedVar == varIdx) {
-                set isAssigned = true;
-                set assignedValue = value;
-            }
-        }
-        
-        if (isAssigned) {
-            let literalSatisfied = (not isNegated and assignedValue) or (isNegated and not assignedValue);
-            if (literalSatisfied) {
-                set satisfied = true;
-            }
-            // If literal is false, simply omit it from simplified clause
-        } else {
-            set simplified += [(varIdx, isNegated)];
-        }
-    }
-    
-    return if satisfied { [] } else { simplified };
-}
-
-function CalculateVariableScore(
-    problem : (Int, Bool)[][],
-    assigned : PartialAssignment,
-    varIdx : Int
-) : Int {
-    mutable score = 0;
-    
-    for clause in problem {
-        mutable containsVar = false;
-        mutable clauseSize = 0;
-        
-        for (clauseVar, _) in clause {
-            if (clauseVar == varIdx) {
-                set containsVar = true;
-            }
-            
-            mutable isAssigned = false;
-            for (assignedVar, _) in assigned::assignments {
-                if (assignedVar == clauseVar) {
-                    set isAssigned = true;
-                }
-            }
-            
-            if (not isAssigned) {
-                set clauseSize += 1;
-            }
-        }
-        
-        if (containsVar and clauseSize > 0) {
-            set score += 10 / clauseSize; // Prefer variables in smaller clauses
-        }
-    }
-    
-    return score;
-}
-
-function CountSatisfiedClauses(
-    problem : (Int, Bool)[][],
-    assigned : PartialAssignment,
-    varIdx : Int,
-    value : Bool
-) : Int {
-    mutable count = 0;
-    let testAssignment = PartialAssignment(assigned::assignments + [(varIdx, value)]);
-    
-    for clause in problem {
-        if (IsClauseSatisfied(clause, testAssignment)) {
-            set count += 1;
-        }
-    }
-    
-    return count;
-}
-
-function IsClauseSatisfied(clause : (Int, Bool)[], assignment : PartialAssignment) : Bool {
-    for (varIdx, isNegated) in clause {
-        for (assignedVar, assignedValue) in assignment::assignments {
-            if (assignedVar == varIdx) {
-                let literalSatisfied = (not isNegated and assignedValue) or (isNegated and not assignedValue);
-                if (literalSatisfied) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
+// === Optimization: Fast Conflict Check ===
 function HasConflict(problem : (Int, Bool)[][], assigned : PartialAssignment) : Bool {
     for clause in problem {
         let simplifiedClause = SimplifyClause(clause, assigned);
-        if (Length(simplifiedClause) == 0) {
-            // Check if clause was satisfied (empty after simplification and originally had literals)
-            mutable hadLiterals = false;
-            for (_, _) in clause {
-                set hadLiterals = true;
-            }
-            if (not hadLiterals) {
-                return true; // Empty clause - conflict
-            }
-            // If hadLiterals is true, clause is satisfied, so we continue to next clause
+        if (Length(simplifiedClause) == 0 and not IsClauseSatisfied(clause, assigned)) {
+            return true;
         }
     }
     return false;
@@ -780,21 +430,17 @@ function EstimateSolutionDensity(
     assignment : PartialAssignment,
     nQubits : Int
 ) : Double {
-    // Simplified estimation - in practice would use more sophisticated methods
     mutable nUnassigned = 0;
-    for varIdx in 0..nQubits-1 { // Fixed to use nQubits instead of hardcoded 20
+    for varIdx in 0..nQubits-1 {
         if (not IsVariableAssigned(varIdx, assignment)) {
             set nUnassigned += 1;
         }
     }
-    
     if (nUnassigned <= 0) {
         return 1.0;
     }
-    
-    // Rough heuristic based on clause density - more optimistic for larger problems
-    let clauseDensity = IntAsDouble(Length(problem)) / IntAsDouble(1 <<< MinI(nUnassigned, 20)); // Cap to prevent overflow
-    return 1.0 / (1.0 + clauseDensity * 0.5); // More optimistic scaling
+    let clauseDensity = IntAsDouble(Length(problem)) / IntAsDouble(1 <<< MinI(nUnassigned, 20));
+    return 1.0 / (1.0 + clauseDensity * 0.5);
 }
 
 function IsVariableAssigned(varIdx : Int, assignment : PartialAssignment) : Bool {
@@ -851,15 +497,135 @@ function Is3SatSolution(problem : (Int, Bool)[][], results : Result[]) : Bool {
     return true;
 }
 
+function FindUnitLiteral(clause : (Int, Bool)[], assignment : PartialAssignment) : Int[] {
+    mutable unassigned = [];
+    mutable satisfied = false;
+    for (varIdx, isNegated) in clause {
+        mutable isAssigned = false;
+        mutable assignedValue = false;
+        for (assignedVar, value) in assignment::assignments {
+            if (assignedVar == varIdx) {
+                set isAssigned = true;
+                set assignedValue = value;
+            }
+        }
+        if (isAssigned) {
+            let literalSatisfied = (not isNegated and assignedValue) or (isNegated and not assignedValue);
+            if (literalSatisfied) {
+                set satisfied = true;
+            }
+        } else {
+            set unassigned += [(varIdx, isNegated)];
+        }
+    }
+    if (satisfied or Length(unassigned) != 1) {
+        return [-1, 0];
+    }
+    let (varIdx, isNegated) = unassigned[0];
+    return [varIdx, if isNegated { 0 } else { 1 }];
+}
+
+function CheckVariablePurity(problem : (Int, Bool)[][], varIdx : Int) : Int[] {
+    mutable positiveOccurrences = 0;
+    mutable negativeOccurrences = 0;
+    for clause in problem {
+        for (clauseVar, isNegated) in clause {
+            if (clauseVar == varIdx) {
+                if (isNegated) {
+                    set negativeOccurrences += 1;
+                } else {
+                    set positiveOccurrences += 1;
+                }
+            }
+        }
+    }
+    if (positiveOccurrences > 0 and negativeOccurrences == 0) {
+        return [1];
+    } elif (negativeOccurrences > 0 and positiveOccurrences == 0) {
+        return [-1];
+    } else {
+        return [0];
+    }
+}
+
+function SimplifyProblem(
+    problem : (Int, Bool)[][],
+    assignment : PartialAssignment
+) : (Int, Bool)[][] {
+    mutable simplified = [];
+    for clause in problem {
+        let simplifiedClause = SimplifyClause(clause, assignment);
+        if (Length(simplifiedClause) > 0) {
+            set simplified += [simplifiedClause];
+        }
+    }
+    return simplified;
+}
+
+function SimplifyClause(
+    clause : (Int, Bool)[],
+    assignment : PartialAssignment
+) : (Int, Bool)[] {
+    mutable simplified = [];
+    mutable satisfied = false;
+    for (varIdx, isNegated) in clause {
+        mutable isAssigned = false;
+        mutable assignedValue = false;
+        for (assignedVar, value) in assignment::assignments {
+            if (assignedVar == varIdx) {
+                set isAssigned = true;
+                set assignedValue = value;
+            }
+        }
+        if (isAssigned) {
+            let literalSatisfied = (not isNegated and assignedValue) or (isNegated and not assignedValue);
+            if (literalSatisfied) {
+                set satisfied = true;
+            }
+        } else {
+            set simplified += [(varIdx, isNegated)];
+        }
+    }
+    return if satisfied { [] } else { simplified };
+}
+
+function CountSatisfiedClauses(
+    problem : (Int, Bool)[][],
+    assigned : PartialAssignment,
+    varIdx : Int,
+    value : Bool
+) : Int {
+    mutable count = 0;
+    let testAssignment = PartialAssignment(assigned::assignments + [(varIdx, value)]);
+    for clause in problem {
+        if (IsClauseSatisfied(clause, testAssignment)) {
+            set count += 1;
+        }
+    }
+    return count;
+}
+
+function IsClauseSatisfied(clause : (Int, Bool)[], assignment : PartialAssignment) : Bool {
+    for (varIdx, isNegated) in clause {
+        for (assignedVar, assignedValue) in assignment::assignments {
+            if (assignedVar == varIdx) {
+                let literalSatisfied = (not isNegated and assignedValue) or (isNegated and not assignedValue);
+                if (literalSatisfied) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 /// # Summary
 /// Enhanced preprocessing functions for larger problems
 function EliminateSubsumedClauses(problem : (Int, Bool)[][]) : (Int, Bool)[][] {
     mutable result = [];
-    
     for i in 0..Length(problem)-1 {
         let clauseI = problem[i];
         mutable isSubsumed = false;
-        
         for j in 0..Length(problem)-1 {
             if (i != j) {
                 let clauseJ = problem[j];
@@ -868,12 +634,10 @@ function EliminateSubsumedClauses(problem : (Int, Bool)[][]) : (Int, Bool)[][] {
                 }
             }
         }
-        
         if (not isSubsumed) {
             set result += [clauseI];
         }
     }
-    
     return result;
 }
 

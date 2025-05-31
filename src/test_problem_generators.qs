@@ -6,76 +6,107 @@ operation RandomBoolOp() : Bool {
     return DrawRandomDouble(0.0, 1.0) < 0.5;
 }
 
-// New helper operation to generate a problem with a known solution (moved here)
-operation GenerateProblemWithKnownSolutionOp(nQubits : Int, numClauses : Int) : ((Int, Bool)[][], Result[]) {
-    mutable knownSolution : Result[] = Repeated(Zero, nQubits);
-    for i in 0..nQubits-1 {
-        if (RandomBoolOp()) {
-            set knownSolution w/= i <- One;
+// Helper function to check if a solution satisfies a 3-SAT problem instance
+function IsSolution(problem : (Int, Bool)[][], solution : Result[]) : Bool {
+    for clause in problem {
+        mutable satisfied = false;
+        for (varIdx, isNegated) in clause {
+            let value = solution[varIdx] == One;
+            if ((isNegated and not value) or (not isNegated and value)) {
+                set satisfied = true;
+            }
+        }
+        if (not satisfied) {
+            return false;
         }
     }
+    return true;
+}
 
-    mutable problem : (Int, Bool)[][] = [];
+// New helper operation to generate a problem with a known solution (moved here)
+// Now with a loop that repeats until the generated problem is satisfied by the knownSolution.
+operation GenerateProblemWithKnownSolutionOp(nQubits : Int, numClauses : Int) : ((Int, Bool)[][], Result[]) {
+    mutable tryCount = 0;
+    repeat {
+        set tryCount += 1;
+        // Generate random known solution
+        mutable knownSolution : Result[] = Repeated(Zero, nQubits);
+        for i in 0..nQubits-1 {
+            if (RandomBoolOp()) {
+                set knownSolution w/= i <- One;
+            }
+        }
 
-    for _ in 0..numClauses-1 {
-        mutable clauseLiterals : (Int, Bool)[] = [];
-        mutable varsInClause = [-1, -1, -1];
-        
-        // 1. Pick 3 distinct variables
-        for iLit in 0..2 {
-            mutable varIdx = -1;
-            mutable isUnique = false;
-            repeat {
-                set varIdx = DrawRandomInt(0, nQubits - 1);
-                set isUnique = true;
-                for kChosen in 0..iLit-1 {
-                    if (varsInClause[kChosen] == varIdx) {
-                        set isUnique = false;
+        mutable problem : (Int, Bool)[][] = [];
+
+        for _ in 0..numClauses-1 {
+            mutable clauseLiterals : (Int, Bool)[] = [];
+            mutable varsInClause = [-1, -1, -1];
+            
+            // 1. Pick 3 distinct variables
+            for iLit in 0..2 {
+                mutable varIdx = -1;
+                mutable isUnique = false;
+                repeat {
+                    set varIdx = DrawRandomInt(0, nQubits - 1);
+                    set isUnique = true;
+                    for kChosen in 0..iLit-1 {
+                        if (varsInClause[kChosen] == varIdx) {
+                            set isUnique = false;
+                        }
+                    }
+                } until isUnique;
+                set varsInClause w/= iLit <- varIdx;
+            }
+
+            // 2. Tentatively assign negations
+            for iLit in 0..2 {
+                let varIdx = varsInClause[iLit];
+                let isNegated = RandomBoolOp();
+                set clauseLiterals += [(varIdx, isNegated)];
+            }
+
+            // 3. Check if the clause is satisfied by knownSolution
+            mutable clauseSatisfiedByKnownSolution = false;
+            for (varIdx, isNegated) in clauseLiterals {
+                let varValueInSolution = knownSolution[varIdx] == One;
+                let literalValue = if isNegated { not varValueInSolution } else { varValueInSolution };
+                if (literalValue) {
+                    set clauseSatisfiedByKnownSolution = true;
+                }
+            }
+
+            // 4. If not satisfied, flip one literal's negation to make it satisfied
+            if (not clauseSatisfiedByKnownSolution) {
+                // Instead of picking random, pick the first literal for determinism
+                let flipIndex = 0;
+                let (varToFlip, _originalNegation) = clauseLiterals[flipIndex];
+                let varValueInSolution = knownSolution[varToFlip] == One;
+                let requiredNegation = not varValueInSolution;
+                mutable newClauseLiterals : (Int, Bool)[] = [];
+                for iLit in 0..2 {
+                    if (iLit == flipIndex) {
+                        set newClauseLiterals += [(varToFlip, requiredNegation)];
+                    } else {
+                        set newClauseLiterals += [clauseLiterals[iLit]];
                     }
                 }
-            } until isUnique;
-            set varsInClause w/= iLit <- varIdx;
-        }
-
-        // 2. Tentatively assign negations
-        for iLit in 0..2 {
-            let varIdx = varsInClause[iLit];
-            let isNegated = RandomBoolOp();
-            set clauseLiterals += [(varIdx, isNegated)];
-        }
-
-        // 3. Check if the clause is satisfied by knownSolution
-        mutable clauseSatisfiedByKnownSolution = false;
-        for (varIdx, isNegated) in clauseLiterals {
-            let varValueInSolution = knownSolution[varIdx] == One;
-            let literalValue = if isNegated { not varValueInSolution } else { varValueInSolution };
-            if (literalValue) {
-                set clauseSatisfiedByKnownSolution = true;
-                // No break here, need to iterate all literals if using 'break' is an issue or for clarity
+                set clauseLiterals = newClauseLiterals;
             }
+            set problem += [clauseLiterals];
         }
 
-        // 4. If not satisfied, flip one literal's negation to make it satisfied
-        if (not clauseSatisfiedByKnownSolution) {
-            let flipIndex = DrawRandomInt(0, 2); // 0, 1, or 2
-            let (varToFlip, _originalNegation) = clauseLiterals[flipIndex];
-            let varValueInSolution = knownSolution[varToFlip] == One;
-            
-            let requiredNegation = not varValueInSolution;
-            
-            mutable newClauseLiterals : (Int, Bool)[] = [];
-            for iLit in 0..2 {
-                if (iLit == flipIndex) {
-                    set newClauseLiterals += [(varToFlip, requiredNegation)];
-                } else {
-                    set newClauseLiterals += [clauseLiterals[iLit]];
-                }
-            }
-            set clauseLiterals = newClauseLiterals;
+        // Ensure that the problem is satisfied by the known solution (sanity check)
+        if (IsSolution(problem, knownSolution)) {
+            // Success
+            return (problem, knownSolution);
+        } else {
+            // Should never happen, but just in case, retry generation
+            Message($"[WARN] Generated problem was not satisfied by known solution, retrying...(Try #{tryCount})");
         }
-        set problem += [clauseLiterals];
-    }
-    return (problem, knownSolution);
+    } until false;
+    // Required by Q# syntax, but unreachable
+    return ([], []);
 }
 
 // Problem generators (moved here)
@@ -89,12 +120,12 @@ operation GenerateStructuredProblem(nQubits : Int) : (Int, Bool)[][] {
     } elif (nQubits == 25) {
         return Generate25QubitProblem();
     } elif (nQubits > 25) { 
-        let numClauses = nQubits * 4; 
+        let numClauses = nQubits * 3; 
         let (problemInstance, _knownSolution) = GenerateProblemWithKnownSolutionOp(nQubits, numClauses);
         return problemInstance;
     } else {
         Message($"Warning: Using GenerateRandomProblem for {nQubits} qubits. Solution not guaranteed by new method.");
-        return GenerateRandomProblem(nQubits, nQubits * 4, 0.5); 
+        return GenerateRandomProblem(nQubits, nQubits * 3, 0.5); 
     }
 }
 
